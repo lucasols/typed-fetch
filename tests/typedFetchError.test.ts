@@ -57,11 +57,13 @@ describe('TypedFetchError', () => {
         "jsonPathParams": undefined,
         "message": "Invalid response format",
         "method": undefined,
+        "multiPart": undefined,
         "pathParams": undefined,
         "payload": undefined,
         "response": undefined,
         "schemaIssues": undefined,
         "status": 500,
+        "url": "?",
       }
     `);
   });

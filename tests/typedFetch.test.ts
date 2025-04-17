@@ -232,6 +232,7 @@ describe('error handling', () => {
         "id": "invalid_path",
         "message": "Path "/leading/slash" should not start or end with /",
         "status": 0,
+        "url": "http://test.com//leading/slash",
       }
     `);
   });
@@ -247,6 +248,7 @@ describe('error handling', () => {
         "id": "invalid_path",
         "message": "Path "trailing/slash/" should not start or end with /",
         "status": 0,
+        "url": "http://test.com/trailing/slash/",
       }
     `);
   });
@@ -262,6 +264,7 @@ describe('error handling', () => {
         "id": "invalid_path",
         "message": "Path "double//slash" should not contain //",
         "status": 0,
+        "url": "http://test.com/double//slash",
       }
     `);
   });
@@ -283,6 +286,7 @@ describe('error handling', () => {
         "id": "network_or_cors_error",
         "message": "Failed to fetch",
         "status": 0,
+        "url": "http://fail.com/network/error",
       }
     `);
   });
@@ -311,6 +315,7 @@ describe('error handling', () => {
           "error": "NF",
         },
         "status": 404,
+        "url": "http://test.com/not/found",
       }
     `);
   });
@@ -338,6 +343,7 @@ describe('error handling', () => {
         "message": "Unexpected token 'T', "This is not JSON" is not valid JSON",
         "response": "This is not JSON",
         "status": 400,
+        "url": "http://test.com/invalid/json",
       }
     `);
   });
@@ -394,6 +400,7 @@ describe('error handling', () => {
           },
         ],
         "status": 200,
+        "url": "http://test.com/validation/fail",
       }
     `);
   });
@@ -427,6 +434,7 @@ describe('error handling', () => {
           "name": "Test Item",
         },
         "status": 0,
+        "url": "http://test.com/test",
       }
     `);
   });
@@ -461,6 +469,7 @@ describe('error handling', () => {
           "error": "NF",
         },
         "status": 404,
+        "url": "http://test.com/not/found",
       }
     `);
   });
@@ -475,9 +484,11 @@ describe('error handling', () => {
 
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
+        "cause": [TypeError: Invalid URL],
         "id": "invalid_url",
         "message": "Invalid URL",
         "status": 0,
+        "url": "___/invalid-url",
       }
     `);
   });
