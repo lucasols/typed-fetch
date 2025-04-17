@@ -138,5 +138,6 @@ describe('multipart/form-data requests', () => {
     assert(!result.ok);
     expect(result.error.id).toBe('invalid_payload');
     expect(result.error.message).toContain('not allowed for GET');
+    expect(result.error.multiPart).toEqual({ field: 'data' });
   });
 });
