@@ -1,6 +1,6 @@
 {
-  "name": "@ls-stack/ai",
-  "version": "0.2.5",
+  "name": "@ls-stack/typed-fetch",
+  "version": "0.0.0",
   "license": "MIT",
   "scripts": {
     "lint": "pnpm tsc && pnpm eslint && pnpm format",
@@ -17,7 +17,7 @@
   "files": [
     "dist"
   ],
-  "repository": "github:lucaslos/ai",
+  "repository": "github:lucaslos/typed-fetch",
   "author": "Lucas Santos",
   "main": "./dist/main.js",
   "module": "./dist/main.mjs",
