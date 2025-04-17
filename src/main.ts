@@ -169,13 +169,15 @@ export async function typedFetch<R = unknown, E = unknown>(
       if (value instanceof File) {
         formData.append(key, value);
       } else if (Array.isArray(value) && value[0] instanceof File) {
-        for (const file of value as File[]) {
-          formData.append(key, file);
+        for (const file of value) {
+          if (file instanceof File) {
+            formData.append(key, file);
+          }
         }
       } else if (typeof value === 'object') {
         // Handle JSON objects by stringifying them and sending as text
         const jsonString = safeJsonStringify(value);
-        if (jsonString) {
+        if (jsonString !== undefined) {
           formData.append(key, jsonString);
         } else {
           // Handle potential stringification errors
