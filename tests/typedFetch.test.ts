@@ -1,3 +1,4 @@
+import { omit } from '@ls-stack/utils/objUtils';
 import { assert, beforeEach, describe, expect, test, vi } from 'vitest';
 import { z } from 'zod';
 import { typedFetch, type TypedFetchError } from '../src/main';
@@ -9,6 +10,14 @@ const mockFetch = vi.mocked<
   (url: URL, options: RequestInit) => Promise<Response>
 >(global.fetch);
 
+function getErrorObj(obj: TypedFetchError) {
+  const errorObj = obj.toJSON();
+
+  return Object.fromEntries(
+    Object.entries(errorObj).filter(([, value]) => value !== undefined),
+  );
+}
+
 const successResponse = (body: unknown, status = 200) => {
   return Promise.resolve({
     ok: status >= 200 && status < 300,
@@ -16,16 +25,6 @@ const successResponse = (body: unknown, status = 200) => {
     statusText: status === 200 ? 'OK' : 'Error',
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(JSON.stringify(body)),
-  } as Response);
-};
-
-const errorResponse = (statusText = 'Network Error', status = 500) => {
-  return Promise.resolve({
-    ok: false,
-    status,
-    statusText,
-    json: () => Promise.reject(new Error('Failed to parse JSON')),
-    text: () => Promise.reject(new Error('Failed to read text')),
   } as Response);
 };
 
@@ -287,7 +286,14 @@ describe('error handling', () => {
   });
 
   test('should return an error for non-2xx status codes', async () => {
-    mockFetch.mockImplementation(() => errorResponse('Not Found', 404));
+    mockFetch.mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: 'NF' }), {
+          status: 404,
+          statusText: 'Not Found',
+        }),
+      ),
+    );
 
     const result = await typedFetch('not/found', {
       method: 'GET',
@@ -299,6 +305,9 @@ describe('error handling', () => {
       {
         "id": "request_error",
         "message": "Not Found",
+        "response": {
+          "error": "NF",
+        },
         "status": 404,
       }
     `);
@@ -324,29 +333,65 @@ describe('error handling', () => {
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
         "id": "invalid_json",
-        "message": "Unexpected token",
-        "status": 0,
+        "message": "Unexpected token 'T', "This is not JSON" is not valid JSON",
+        "response": "This is not JSON",
+        "status": 400,
       }
     `);
   });
 
   test('should return an error if response validation fails', async () => {
     mockFetch.mockImplementation(() =>
-      successResponse({ name: 'Test Name', age: 'twenty' }),
+      successResponse({ name: 'Test Name', age: 'twenty', id: [1, 2, '3'] }),
     );
 
     const result = await typedFetch('validation/fail', {
       method: 'GET',
       host: 'http://test.com',
-      responseSchema: z.object({ name: z.string(), age: z.number() }),
+      responseSchema: z.object({
+        name: z.string(),
+        age: z.number(),
+        id: z.array(z.number()),
+      }),
     });
 
     assert(!result.ok);
-    expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
+    expect(omit(getErrorObj(result.error), ['cause'])).toMatchInlineSnapshot(`
       {
         "id": "response_validation_error",
-        "message": "Invalid JSON response",
-        "status": 0,
+        "message": "$.age: Expected number, received string
+      $.id.[2]: Expected number, received string",
+        "response": {
+          "age": "twenty",
+          "id": [
+            1,
+            2,
+            "3",
+          ],
+          "name": "Test Name",
+        },
+        "status": 200,
+        "zodError": [ZodError: [
+        {
+          "code": "invalid_type",
+          "expected": "number",
+          "received": "string",
+          "path": [
+            "age"
+          ],
+          "message": "Expected number, received string"
+        },
+        {
+          "code": "invalid_type",
+          "expected": "number",
+          "received": "string",
+          "path": [
+            "id",
+            2
+          ],
+          "message": "Expected number, received string"
+        }
+      ]],
       }
     `);
     expect(result.error.cause).toBeInstanceOf(z.ZodError);
@@ -376,17 +421,46 @@ describe('error handling', () => {
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
         "id": "invalid_payload",
-        "message": "Invalid payload",
+        "message": "Payload is not allowed for GET or DELETE requests",
+        "payload": {
+          "name": "Test Item",
+        },
         "status": 0,
       }
     `);
   });
+
+  test('getMessageFromRequestError', async () => {
+    mockFetch.mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: 'NF' }), {
+          status: 404,
+          statusText: 'Not Found',
+        }),
+      ),
+    );
+
+    const result = await typedFetch('not/found', {
+      method: 'GET',
+      host: 'http://test.com',
+      errorResponseSchema: z.object({ error: z.string() }),
+      getMessageFromRequestError: (response) => response.error,
+    });
+
+    assert(!result.ok);
+
+    expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
+      {
+        "errResponse": {
+          "error": "NF",
+        },
+        "id": "request_error",
+        "message": "NF",
+        "response": {
+          "error": "NF",
+        },
+        "status": 404,
+      }
+    `);
+  });
 });
-
-function getErrorObj(obj: TypedFetchError) {
-  const errorObj = obj.toJSON();
-
-  return Object.fromEntries(
-    Object.entries(errorObj).filter(([, value]) => value !== undefined),
-  );
-}

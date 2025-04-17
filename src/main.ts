@@ -12,6 +12,7 @@ type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 type LogOptions = {
   indent?: number;
   hostAlias?: string;
+  logFn?: TypedFetchLogger;
 };
 
 type RequestPayload = Record<string, unknown> | unknown[];
@@ -20,7 +21,7 @@ type RequestPathParams = Record<
   string | number | boolean | string[] | number[] | undefined
 >;
 
-type ApiCallParams<R = unknown> = {
+type ApiCallParams<R = unknown, E = unknown> = {
   method: HttpMethod;
   payload?: RequestPayload;
   pathParams?: RequestPathParams;
@@ -29,17 +30,19 @@ type ApiCallParams<R = unknown> = {
   responseSchema?: z.ZodType<R>;
   enableLogs?: boolean | LogOptions;
   disablePathValidation?: boolean;
+  errorResponseSchema?: z.ZodType<E>;
+  getMessageFromRequestError?: (errorResponse: E) => string;
 };
 
-export async function typedFetch<R = unknown>(
+export async function typedFetch<R = unknown, E = unknown>(
   path: URL,
-  options: ApiCallParams<R>,
-): Promise<Result<R, TypedFetchError>>;
-export async function typedFetch<R = unknown>(
+  options: ApiCallParams<R, E>,
+): Promise<Result<R, TypedFetchError<E>>>;
+export async function typedFetch<R = unknown, E = unknown>(
   path: string,
-  options: ApiCallParams<R> & { host: string },
-): Promise<Result<R, TypedFetchError>>;
-export async function typedFetch<R = unknown>(
+  options: ApiCallParams<R, E> & { host: string },
+): Promise<Result<R, TypedFetchError<E>>>;
+export async function typedFetch<R = unknown, E = unknown>(
   path: string | URL,
   {
     payload,
@@ -51,8 +54,10 @@ export async function typedFetch<R = unknown>(
     jsonPathParams,
     enableLogs,
     disablePathValidation,
-  }: ApiCallParams<R> & { host?: string },
-): Promise<Result<R, TypedFetchError>> {
+    errorResponseSchema,
+    getMessageFromRequestError,
+  }: ApiCallParams<R, E> & { host?: string },
+): Promise<Result<R, TypedFetchError<E>>> {
   const urlResult = resultify(() => {
     if (typeof path === 'string') {
       return new URL(path, host);
@@ -72,10 +77,13 @@ export async function typedFetch<R = unknown>(
 
   const url = urlResult.value;
 
-  const logId = ++devLogId;
-
   const logEnd = enableLogs
-    ? logCall(logId, url, method, enableLogs === true ? undefined : enableLogs)
+    ? logCall(
+        ++devLogId,
+        url,
+        method,
+        enableLogs === true ? undefined : enableLogs,
+      )
     : undefined;
 
   if (!disablePathValidation && typeof path === 'string') {
@@ -152,27 +160,62 @@ export async function typedFetch<R = unknown>(
       }),
     );
 
-  const responseJSON = await response.value.text();
+  const responseJSON = await resultify(() => response.value.text());
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-  const parsedResponse = resultify(() => JSON.parse(responseJSON));
-
-  if (!parsedResponse.ok) {
+  if (!responseJSON.ok) {
     return errorResult(
       new TypedFetchError({
         id: 'invalid_json',
-        cause: parsedResponse.error.cause,
-        message: parsedResponse.error.message,
+        cause: responseJSON.error.cause,
+        message: responseJSON.error.message,
+        status: response.value.status,
       }),
     );
   }
 
-  if (response.value.status < 200 || response.value.status >= 300) {
+  const parsedResponse = resultify(
+    () => JSON.parse(responseJSON.value) as unknown,
+  );
+
+  if (!parsedResponse.ok) {
+    return errorResult(
+      new TypedFetchError<E>({
+        id: 'invalid_json',
+        cause: parsedResponse.error.cause,
+        message: parsedResponse.error.message,
+        response: responseJSON.value,
+        status: 400,
+      }),
+    );
+  }
+
+  if (!response.value.ok) {
+    const errorResponse = errorResponseSchema
+      ? errorResponseSchema.safeParse(parsedResponse.value)
+      : undefined;
+
+    if (errorResponse && !errorResponse.success) {
+      return errorResult(
+        new TypedFetchError<E>({
+          id: 'response_validation_error',
+          status: response.value.status,
+          errResponse: errorResponse.data,
+          response: parsedResponse.value,
+          ...getZodErrorProps(errorResponse.error),
+        }),
+      );
+    }
+
     return errorResult(
       new TypedFetchError({
         id: 'request_error',
-        message: response.value.statusText,
+        message:
+          getMessageFromRequestError && errorResponse?.data
+            ? getMessageFromRequestError(errorResponse.data)
+            : response.value.statusText,
         status: response.value.status,
+        response: parsedResponse.value,
+        errResponse: errorResponse?.data,
       }),
     );
   }
@@ -187,10 +230,14 @@ export async function typedFetch<R = unknown>(
 
   if (!validResponse.success) {
     return errorResult(
-      new TypedFetchError({
+      new TypedFetchError<E>({
         id: 'response_validation_error',
-        message: validResponse.error.message,
-        cause: validResponse.error,
+        errResponse: errorResponseSchema
+          ? errorResponseSchema.safeParse(parsedResponse.value).data
+          : undefined,
+        response: parsedResponse.value,
+        status: response.value.status,
+        ...getZodErrorProps(validResponse.error),
       }),
     );
   }
@@ -199,14 +246,20 @@ export async function typedFetch<R = unknown>(
 
   return Result.ok(validResponse.data);
 
-  function errorResult(error: TypedFetchError) {
-    logEnd?.error(error.status || error.id);
+  function errorResult(error: TypedFetchError<E>) {
+    logEnd?.error(
+      error.id === 'request_error'
+        ? error.status
+        : error.status
+        ? `${error.id}(${error.status})`
+        : error.id,
+    );
 
-    const newError = new TypedFetchError({
+    const newError = new TypedFetchError<E>({
       ...error,
       message: error.message,
       status: error.status || 0,
-      method: error.method,
+      errResponse: error.errResponse,
       payload,
       pathParams,
       jsonPathParams,
@@ -219,7 +272,7 @@ export async function typedFetch<R = unknown>(
   }
 }
 
-export class TypedFetchError extends Error {
+export class TypedFetchError<E = unknown> extends Error {
   readonly id:
     | 'invalid_url'
     | 'invalid_path'
@@ -230,21 +283,23 @@ export class TypedFetchError extends Error {
     | 'invalid_payload';
   readonly status: number;
   readonly payload: RequestPayload | undefined;
-  readonly response: unknown;
+  readonly errResponse: E | undefined;
   readonly pathParams: RequestPathParams | undefined;
   readonly jsonPathParams?: Record<string, unknown>;
   readonly headers?: Record<string, string>;
   readonly method: HttpMethod | undefined;
   readonly zodError?: ZodError;
+  readonly response: unknown;
 
   constructor({
     id,
     method,
     message,
     status,
-    response,
+    errResponse,
     payload,
     pathParams,
+    response,
     jsonPathParams,
     headers,
     cause,
@@ -254,6 +309,7 @@ export class TypedFetchError extends Error {
     message: string;
     method?: HttpMethod;
     status?: number;
+    errResponse?: E | undefined;
     response?: unknown;
     payload?: RequestPayload;
     pathParams?: RequestPathParams;
@@ -267,13 +323,14 @@ export class TypedFetchError extends Error {
     this.id = id;
     this.status = status ?? 0;
     this.payload = payload;
-    this.response = response;
+    this.errResponse = errResponse;
     this.method = method;
     this.pathParams = pathParams;
     this.jsonPathParams = jsonPathParams;
     this.headers = headers;
     this.zodError = zodError;
     this.cause = cause;
+    this.response = response;
   }
 
   toJSON() {
@@ -281,33 +338,54 @@ export class TypedFetchError extends Error {
   }
 }
 
+export type TypedFetchLogger = (
+  logText: string,
+  logInfo: {
+    startTimestamp: number;
+    errorStatus: number | string;
+    logId: number;
+    method: string;
+    url: URL;
+  },
+) => void;
+
+const defaultLogFn: TypedFetchLogger = (logText) => {
+  console.info(logText);
+};
+
 function logCall(
   logId: number,
   url: URL,
   method: string,
-  options?: LogOptions,
+  { indent = 0, hostAlias, logFn = defaultLogFn }: LogOptions = {},
 ) {
   function log(startTimestamp = 0, errorStatus: number | string = 0) {
-    console.info(
-      concatStrings(
-        ' '.repeat(options?.indent ?? 0),
-        !startTimestamp
-          ? `${String(logId)}>>`
-          : styleText(
-              'bold',
-              styleText(!errorStatus ? 'green' : 'red', `<<${String(logId)}`),
-            ),
-        ` api_call:${styleText('bold', method)} ${styleText(
-          'gray',
-          options?.hostAlias ?? url.hostname,
-        )}${url.pathname}`,
-        !!errorStatus && styleText('red', ` ${errorStatus} `),
-        !!startTimestamp && [
-          ' ',
-          styleText('gray', readableDuration(Date.now() - startTimestamp)),
-        ],
-      ),
+    const logText = concatStrings(
+      ' '.repeat(indent),
+      !startTimestamp
+        ? `${String(logId)}>>`
+        : styleText(
+            'bold',
+            styleText(!errorStatus ? 'green' : 'red', `<<${String(logId)}`),
+          ),
+      ` api_call:${styleText('bold', method)} ${styleText(
+        'gray',
+        hostAlias ?? url.host,
+      )}${url.pathname}`,
+      !!errorStatus && styleText('red', ` ${errorStatus} `),
+      !!startTimestamp && [
+        ' ',
+        styleText('gray', readableDuration(Date.now() - startTimestamp)),
+      ],
     );
+
+    logFn(logText, {
+      startTimestamp,
+      errorStatus,
+      logId,
+      method,
+      url,
+    });
   }
 
   log();
@@ -325,4 +403,23 @@ export function readableDuration(durationMs: number) {
 
   const seconds = durationMs / 1000;
   return `${seconds.toFixed(2)}s`;
+}
+
+function getZodErrorProps(error: ZodError): {
+  message: string;
+  zodError: ZodError;
+  cause: unknown;
+} {
+  return {
+    message: error.issues
+      .map(
+        (issue) =>
+          `$.${issue.path
+            .map((p) => (typeof p === 'number' ? `[${p}]` : p))
+            .join('.')}: ${issue.message}`,
+      )
+      .join('\n'),
+    zodError: error,
+    cause: error,
+  };
 }

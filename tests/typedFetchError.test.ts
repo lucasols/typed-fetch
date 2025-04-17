@@ -13,7 +13,7 @@ describe('TypedFetchError', () => {
       pathParams: { id: '123' },
       jsonPathParams: { filter: { name: 'test' } },
       headers: { 'Content-Type': 'application/json' },
-      response: { detail: 'Resource not found' },
+      errResponse: { detail: 'Resource not found' },
       cause: new Error('Original cause'),
     });
 
@@ -25,7 +25,7 @@ describe('TypedFetchError', () => {
     expect(error.pathParams).toEqual({ id: '123' });
     expect(error.jsonPathParams).toEqual({ filter: { name: 'test' } });
     expect(error.headers).toEqual({ 'Content-Type': 'application/json' });
-    expect(error.response).toEqual({ detail: 'Resource not found' });
+    expect(error.errResponse).toEqual({ detail: 'Resource not found' });
     expect(error.cause).toBeInstanceOf(Error); // Check instance type instead of reference equality
     expect(error.name).toBe('Error'); // Inherited from Error class
   });
@@ -51,6 +51,7 @@ describe('TypedFetchError', () => {
     expect(json).toMatchInlineSnapshot(`
       {
         "cause": [Error: Validation failed],
+        "errResponse": undefined,
         "headers": undefined,
         "id": "response_validation_error",
         "jsonPathParams": undefined,
