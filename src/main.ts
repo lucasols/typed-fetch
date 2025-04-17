@@ -494,9 +494,11 @@ function getPathSegmentString(
   }
 }
 
-function getValidationProps(
-  issues: readonly StandardSchemaV1.Issue[],
-): Partial<TypedFetchError> {
+function getValidationProps(issues: readonly StandardSchemaV1.Issue[]): Partial<
+  Omit<TypedFetchError, 'message' | 'errResponse'>
+> & {
+  message: string;
+} {
   return {
     message: issues
       .map((issue) =>
