@@ -27,6 +27,10 @@ type ApiCallParams<R = unknown, E = unknown> = {
   pathParams?: RequestPathParams;
   headers?: Record<string, string>;
   jsonPathParams?: Record<string, unknown>;
+  multiPart?: Record<
+    string,
+    string | File | File[] | RequestPayload | undefined
+  >;
   responseSchema?: z.ZodType<R>;
   enableLogs?: boolean | LogOptions;
   disablePathValidation?: boolean;
