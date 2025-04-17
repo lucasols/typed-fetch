@@ -50,7 +50,7 @@ test('should make a successful GET request and parse the response', async () => 
       "http://localhost:3000/test/path",
       {
         "body": undefined,
-        "headers": undefined,
+        "headers": {},
         "method": "GET",
       },
     ]
@@ -82,7 +82,9 @@ test('should make a successful POST request with payload and parse the response'
       "http://api.example.com/items",
       {
         "body": "{"name":"Test Item"}",
-        "headers": undefined,
+        "headers": {
+          "Content-Type": "application/json",
+        },
         "method": "POST",
       },
     ]
@@ -121,7 +123,7 @@ test('should use URL object directly', async () => {
       "http://example.com/api/v1/resource",
       {
         "body": undefined,
-        "headers": undefined,
+        "headers": {},
         "method": "GET",
       },
     ]
@@ -153,7 +155,7 @@ test('should include path parameters in the URL', async () => {
       "http://localhost:5000/entity?id=123&type=user&active=true&enabled=false&tags=a%2Cb",
       {
         "body": undefined,
-        "headers": undefined,
+        "headers": {},
         "method": "GET",
       },
     ]
@@ -179,7 +181,7 @@ test('should include json path parameters in the URL', async () => {
       "http://localhost:5000/entity?data=%7B%22id%22%3A123%2C%22type%22%3A%22user%22%7D",
       {
         "body": undefined,
-        "headers": undefined,
+        "headers": {},
         "method": "GET",
       },
     ]
@@ -421,7 +423,7 @@ describe('error handling', () => {
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
         "id": "invalid_payload",
-        "message": "Payload is not allowed for GET or DELETE requests",
+        "message": "Payload or multiPart is not allowed for GET or DELETE requests",
         "payload": {
           "name": "Test Item",
         },
