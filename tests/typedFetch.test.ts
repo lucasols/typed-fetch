@@ -464,4 +464,21 @@ describe('error handling', () => {
       }
     `);
   });
+
+  test('invalid url', async () => {
+    const result = await typedFetch('invalid-url', {
+      method: 'GET',
+      host: '___',
+    });
+
+    assert(!result.ok);
+
+    expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
+      {
+        "id": "invalid_url",
+        "message": "Invalid URL",
+        "status": 0,
+      }
+    `);
+  });
 });

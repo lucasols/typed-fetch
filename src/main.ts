@@ -20,6 +20,10 @@ type RequestPathParams = Record<
   string,
   string | number | boolean | string[] | number[] | undefined
 >;
+type RequestMultiPart = Record<
+  string,
+  string | File | File[] | RequestPayload | undefined
+>;
 
 type ApiCallParams<R = unknown, E = unknown> = {
   method: HttpMethod;
@@ -27,10 +31,7 @@ type ApiCallParams<R = unknown, E = unknown> = {
   pathParams?: RequestPathParams;
   headers?: Record<string, string>;
   jsonPathParams?: Record<string, unknown>;
-  multiPart?: Record<
-    string,
-    string | File | File[] | RequestPayload | undefined
-  >;
+  multiPart?: RequestMultiPart;
   responseSchema?: StandardSchemaV1<R>;
   enableLogs?: boolean | LogOptions;
   disablePathValidation?: boolean;
@@ -63,19 +64,18 @@ export async function typedFetch<R = unknown, E = unknown>(
     multiPart,
   }: ApiCallParams<R, E> & { host?: string },
 ): Promise<Result<R, TypedFetchError<E>>> {
-  const urlResult = resultify(() => {
-    if (typeof path === 'string') {
-      return new URL(path, host);
-    }
-
-    return path;
-  });
+  const urlResult = resultify(() =>
+    typeof path === 'string' ? new URL(path, host) : path,
+  );
 
   if (!urlResult.ok) {
-    return errorResult(
+    return Result.err(
       new TypedFetchError({
         id: 'invalid_url',
         message: urlResult.error.message,
+        status: 0,
+        cause: urlResult.error,
+        ...getGenericErrorPayload(),
       }),
     );
   }
@@ -314,6 +314,20 @@ export async function typedFetch<R = unknown, E = unknown>(
 
   return Result.ok(validResponse.value);
 
+  function getGenericErrorPayload() {
+    return {
+      payload,
+      pathParams,
+      jsonPathParams,
+      headers,
+      multiPart,
+      url:
+        typeof path === 'string' ?
+          `${host}/${path}`
+        : `${path.host}/${path.pathname}`,
+    };
+  }
+
   function errorResult(error: TypedFetchError<E>) {
     logEnd?.error(
       error.id === 'request_error' ? error.status
@@ -326,10 +340,7 @@ export async function typedFetch<R = unknown, E = unknown>(
       message: error.message,
       status: error.status || 0,
       errResponse: error.errResponse,
-      payload,
-      pathParams,
-      jsonPathParams,
-      headers,
+      ...getGenericErrorPayload(),
     });
 
     newError.stack = error.stack;
@@ -356,6 +367,8 @@ export class TypedFetchError<E = unknown> extends Error {
   readonly method: HttpMethod | undefined;
   readonly schemaIssues: readonly StandardSchemaV1.Issue[] | undefined;
   readonly response: unknown;
+  readonly url: string;
+  readonly multiPart: RequestMultiPart | undefined;
 
   constructor({
     id,
@@ -370,9 +383,12 @@ export class TypedFetchError<E = unknown> extends Error {
     headers,
     cause,
     schemaIssues,
+    url,
+    multiPart,
   }: {
     id: TypedFetchError['id'];
     message: string;
+    url?: string;
     method?: HttpMethod;
     status?: number;
     errResponse?: E | undefined;
@@ -383,6 +399,7 @@ export class TypedFetchError<E = unknown> extends Error {
     headers?: Record<string, string>;
     cause?: unknown;
     schemaIssues?: readonly StandardSchemaV1.Issue[];
+    multiPart?: RequestMultiPart;
   }) {
     super(message);
 
@@ -397,6 +414,8 @@ export class TypedFetchError<E = unknown> extends Error {
     this.schemaIssues = schemaIssues;
     this.cause = cause;
     this.response = response;
+    this.url = url ?? '?';
+    this.multiPart = multiPart;
   }
 
   toJSON(): {
