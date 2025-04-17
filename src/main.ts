@@ -7,7 +7,7 @@ import { z, type ZodError } from 'zod';
 
 let devLogId = 0;
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 type LogOptions = {
   indent?: number;
