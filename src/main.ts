@@ -60,6 +60,7 @@ export async function typedFetch<R = unknown, E = unknown>(
     disablePathValidation,
     errorResponseSchema,
     getMessageFromRequestError,
+    multiPart,
   }: ApiCallParams<R, E> & { host?: string },
 ): Promise<Result<R, TypedFetchError<E>>> {
   const urlResult = resultify(() => {
@@ -110,11 +111,21 @@ export async function typedFetch<R = unknown, E = unknown>(
     }
   }
 
-  if ((method === 'GET' || method === 'DELETE') && payload) {
+  if (payload && multiPart) {
     return errorResult(
       new TypedFetchError({
         id: 'invalid_payload',
-        message: 'Payload is not allowed for GET or DELETE requests',
+        message: 'Cannot use both payload and multiPart',
+      }),
+    );
+  }
+
+  if ((method === 'GET' || method === 'DELETE') && (payload || multiPart)) {
+    return errorResult(
+      new TypedFetchError({
+        id: 'invalid_payload',
+        message:
+          'Payload or multiPart is not allowed for GET or DELETE requests',
       }),
     );
   }
@@ -146,12 +157,55 @@ export async function typedFetch<R = unknown, E = unknown>(
     }
   }
 
+  const finalHeaders = { ...headers };
+  let body: BodyInit | undefined;
+
+  if (multiPart) {
+    const formData = new FormData();
+
+    for (const [key, value] of Object.entries(multiPart)) {
+      if (value === undefined) continue;
+
+      if (value instanceof File) {
+        formData.append(key, value);
+      } else if (Array.isArray(value) && value[0] instanceof File) {
+        for (const file of value as File[]) {
+          formData.append(key, file);
+        }
+      } else if (typeof value === 'object') {
+        // Handle JSON objects by stringifying them and sending as text
+        const jsonString = safeJsonStringify(value);
+        if (jsonString) {
+          formData.append(key, jsonString);
+        } else {
+          // Handle potential stringification errors
+          return errorResult(
+            new TypedFetchError({
+              id: 'invalid_payload',
+              message: `Could not stringify value for multipart key: ${key}`,
+            }),
+          );
+        }
+      } else {
+        formData.append(key, String(value));
+      }
+    }
+    body = formData;
+    // Let the browser set the Content-Type for multipart/form-data
+    delete finalHeaders['Content-Type'];
+    delete finalHeaders['content-type'];
+  } else if (payload) {
+    body = safeJsonStringify(payload) ?? undefined;
+    if (!finalHeaders['Content-Type'] && !finalHeaders['content-type']) {
+      finalHeaders['Content-Type'] = 'application/json';
+    }
+  }
+
   const response = await resultify(() =>
     fetch(url, {
-      headers,
+      headers: finalHeaders,
       method,
-      body:
-        method === 'GET' ? undefined : safeJsonStringify(payload) ?? undefined,
+      body,
     }),
   );
 
