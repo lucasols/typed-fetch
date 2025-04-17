@@ -1,0 +1,47 @@
+{
+  "name": "@ls-stack/ai",
+  "version": "0.2.5",
+  "license": "MIT",
+  "scripts": {
+    "lint": "pnpm tsc && pnpm eslint && pnpm format",
+    "tsc": "tsc -p tsconfig.prod.json",
+    "format": "prettier src/ --write  --list-different",
+    "test": "vitest run",
+    "eslint": "eslint src/",
+    "test:ui": "vitest --ui",
+    "build": "pnpm test && pnpm lint && pnpm run build:no-test",
+    "build:no-test": "tsup --minify --dts",
+    "pre-publish": "./scripts/check-if-is-sync.sh && pnpm build",
+    "npm-publish": "pnpm publish --access=public"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": "github:lucaslos/ai",
+  "author": "Lucas Santos",
+  "main": "./dist/main.js",
+  "module": "./dist/main.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/main.mjs",
+      "require": "./dist/main.js"
+    }
+  },
+  "engines": {
+    "node": ">=23.0.0"
+  },
+  "devDependencies": {
+    "@ls-stack/eslint-cfg": "^0.1.3",
+    "@ls-stack/utils": "^3.3.1",
+    "@types/node": "^22.14.1",
+    "@vitest/ui": "^3.1.1",
+    "eslint": "^9.24.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.0",
+    "vitest": "^3.1.1"
+  },
+  "dependencies": {
+    "zod": "^3.24.3"
+  }
+}

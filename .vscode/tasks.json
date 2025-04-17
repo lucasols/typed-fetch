@@ -1,0 +1,42 @@
+{
+  // See https://go.microsoft.com/fwlink/?LinkId=733558
+  // for the documentation about the tasks.json format
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "run tests",
+      "type": "npm",
+      "script": "test:ui"
+    },
+    {
+      "label": "bump version and deploy",
+      "type": "shell",
+      "command": "pnpm pre-publish && pnpm version ${input:version} && pnpm npm-publish",
+      "problemMatcher": []
+    },
+    {
+      "label": "run lint",
+      "type": "npm",
+      "script": "lint",
+      "presentation": {
+        "clear": true
+      }
+    },
+    {
+      "label": "tsc watch",
+      "type": "npm",
+      "script": "tsc:watch",
+      "presentation": {
+        "clear": true
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "version",
+      "type": "pickString",
+      "description": "Select version type",
+      "options": ["minor", "patch", "major"]
+    }
+  ]
+}
