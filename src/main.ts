@@ -82,8 +82,9 @@ export async function typedFetch<R = unknown, E = unknown>(
 
   const url = urlResult.value;
 
-  const logEnd = enableLogs
-    ? logCall(
+  const logEnd =
+    enableLogs ?
+      logCall(
         ++devLogId,
         url,
         method,
@@ -250,8 +251,9 @@ export async function typedFetch<R = unknown, E = unknown>(
   }
 
   if (!response.value.ok) {
-    const errorResponse = errorResponseSchema
-      ? errorResponseSchema.safeParse(parsedResponse.value)
+    const errorResponse =
+      errorResponseSchema ?
+        errorResponseSchema.safeParse(parsedResponse.value)
       : undefined;
 
     if (errorResponse && !errorResponse.success) {
@@ -270,9 +272,9 @@ export async function typedFetch<R = unknown, E = unknown>(
       new TypedFetchError({
         id: 'request_error',
         message:
-          getMessageFromRequestError && errorResponse?.data
-            ? getMessageFromRequestError(errorResponse.data)
-            : response.value.statusText,
+          getMessageFromRequestError && errorResponse?.data ?
+            getMessageFromRequestError(errorResponse.data)
+          : response.value.statusText,
         status: response.value.status,
         response: parsedResponse.value,
         errResponse: errorResponse?.data,
@@ -292,8 +294,9 @@ export async function typedFetch<R = unknown, E = unknown>(
     return errorResult(
       new TypedFetchError<E>({
         id: 'response_validation_error',
-        errResponse: errorResponseSchema
-          ? errorResponseSchema.safeParse(parsedResponse.value).data
+        errResponse:
+          errorResponseSchema ?
+            errorResponseSchema.safeParse(parsedResponse.value).data
           : undefined,
         response: parsedResponse.value,
         status: response.value.status,
@@ -308,11 +311,9 @@ export async function typedFetch<R = unknown, E = unknown>(
 
   function errorResult(error: TypedFetchError<E>) {
     logEnd?.error(
-      error.id === 'request_error'
-        ? error.status
-        : error.status
-        ? `${error.id}(${error.status})`
-        : error.id,
+      error.id === 'request_error' ? error.status
+      : error.status ? `${error.id}(${error.status})`
+      : error.id,
     );
 
     const newError = new TypedFetchError<E>({
@@ -422,12 +423,12 @@ function logCall(
   function log(startTimestamp = 0, errorStatus: number | string = 0) {
     const logText = concatStrings(
       ' '.repeat(indent),
-      !startTimestamp
-        ? `${String(logId)}>>`
-        : styleText(
-            'bold',
-            styleText(!errorStatus ? 'green' : 'red', `<<${String(logId)}`),
-          ),
+      !startTimestamp ?
+        `${String(logId)}>>`
+      : styleText(
+          'bold',
+          styleText(!errorStatus ? 'green' : 'red', `<<${String(logId)}`),
+        ),
       ` api_call:${styleText('bold', method)} ${styleText(
         'gray',
         hostAlias ?? url.host,
