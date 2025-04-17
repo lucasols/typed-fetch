@@ -372,31 +372,30 @@ describe('error handling', () => {
           ],
           "name": "Test Name",
         },
+        "schemaIssues": [
+          {
+            "code": "invalid_type",
+            "expected": "number",
+            "message": "Expected number, received string",
+            "path": [
+              "age",
+            ],
+            "received": "string",
+          },
+          {
+            "code": "invalid_type",
+            "expected": "number",
+            "message": "Expected number, received string",
+            "path": [
+              "id",
+              2,
+            ],
+            "received": "string",
+          },
+        ],
         "status": 200,
-        "zodError": [ZodError: [
-        {
-          "code": "invalid_type",
-          "expected": "number",
-          "received": "string",
-          "path": [
-            "age"
-          ],
-          "message": "Expected number, received string"
-        },
-        {
-          "code": "invalid_type",
-          "expected": "number",
-          "received": "string",
-          "path": [
-            "id",
-            2
-          ],
-          "message": "Expected number, received string"
-        }
-      ]],
       }
     `);
-    expect(result.error.cause).toBeInstanceOf(z.ZodError);
   });
 
   test('should return an error if payload is provided for GET request', async () => {

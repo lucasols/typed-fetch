@@ -2,8 +2,8 @@ import { safeJsonStringify } from '@ls-stack/utils/safeJson';
 import { __LEGIT_CAST__ } from '@ls-stack/utils/saferTyping';
 import { concatStrings } from '@ls-stack/utils/stringUtils';
 import { Result, resultify } from '@ls-stack/utils/tsResult';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { styleText } from 'node:util';
-import { z, type ZodError } from 'zod';
 
 let devLogId = 0;
 
@@ -31,10 +31,10 @@ type ApiCallParams<R = unknown, E = unknown> = {
     string,
     string | File | File[] | RequestPayload | undefined
   >;
-  responseSchema?: z.ZodType<R>;
+  responseSchema?: StandardSchemaV1<R>;
   enableLogs?: boolean | LogOptions;
   disablePathValidation?: boolean;
-  errorResponseSchema?: z.ZodType<E>;
+  errorResponseSchema?: StandardSchemaV1<E>;
   getMessageFromRequestError?: (errorResponse: E) => string;
 };
 
@@ -253,17 +253,16 @@ export async function typedFetch<R = unknown, E = unknown>(
   if (!response.value.ok) {
     const errorResponse =
       errorResponseSchema ?
-        errorResponseSchema.safeParse(parsedResponse.value)
+        standardResultValidate(errorResponseSchema, parsedResponse.value)
       : undefined;
 
-    if (errorResponse && !errorResponse.success) {
+    if (errorResponse && !errorResponse.ok) {
       return errorResult(
         new TypedFetchError<E>({
           id: 'response_validation_error',
           status: response.value.status,
-          errResponse: errorResponse.data,
           response: parsedResponse.value,
-          ...getZodErrorProps(errorResponse.error),
+          ...getValidationProps(errorResponse.error),
         }),
       );
     }
@@ -272,12 +271,12 @@ export async function typedFetch<R = unknown, E = unknown>(
       new TypedFetchError({
         id: 'request_error',
         message:
-          getMessageFromRequestError && errorResponse?.data ?
-            getMessageFromRequestError(errorResponse.data)
+          getMessageFromRequestError && errorResponse?.value ?
+            getMessageFromRequestError(errorResponse.value)
           : response.value.statusText,
         status: response.value.status,
         response: parsedResponse.value,
-        errResponse: errorResponse?.data,
+        errResponse: errorResponse?.value,
       }),
     );
   }
@@ -288,26 +287,32 @@ export async function typedFetch<R = unknown, E = unknown>(
     return Result.ok(__LEGIT_CAST__<R>(parsedResponse.value));
   }
 
-  const validResponse = responseSchema.safeParse(parsedResponse.value);
+  const validResponse = standardResultValidate(
+    responseSchema,
+    parsedResponse.value,
+  );
 
-  if (!validResponse.success) {
+  if (!validResponse.ok) {
     return errorResult(
       new TypedFetchError<E>({
         id: 'response_validation_error',
         errResponse:
           errorResponseSchema ?
-            errorResponseSchema.safeParse(parsedResponse.value).data
+            (standardResultValidate(
+              errorResponseSchema,
+              parsedResponse.value,
+            ).unwrapOrNull() ?? undefined)
           : undefined,
         response: parsedResponse.value,
         status: response.value.status,
-        ...getZodErrorProps(validResponse.error),
+        ...getValidationProps(validResponse.error),
       }),
     );
   }
 
   logEnd?.success();
 
-  return Result.ok(validResponse.data);
+  return Result.ok(validResponse.value);
 
   function errorResult(error: TypedFetchError<E>) {
     logEnd?.error(
@@ -346,10 +351,10 @@ export class TypedFetchError<E = unknown> extends Error {
   readonly payload: RequestPayload | undefined;
   readonly errResponse: E | undefined;
   readonly pathParams: RequestPathParams | undefined;
-  readonly jsonPathParams?: Record<string, unknown>;
-  readonly headers?: Record<string, string>;
+  readonly jsonPathParams: Record<string, unknown> | undefined;
+  readonly headers: Record<string, string> | undefined;
   readonly method: HttpMethod | undefined;
-  readonly zodError?: ZodError;
+  readonly schemaIssues: readonly StandardSchemaV1.Issue[] | undefined;
   readonly response: unknown;
 
   constructor({
@@ -364,7 +369,7 @@ export class TypedFetchError<E = unknown> extends Error {
     jsonPathParams,
     headers,
     cause,
-    zodError,
+    schemaIssues,
   }: {
     id: TypedFetchError['id'];
     message: string;
@@ -377,7 +382,7 @@ export class TypedFetchError<E = unknown> extends Error {
     jsonPathParams?: Record<string, unknown>;
     headers?: Record<string, string>;
     cause?: unknown;
-    zodError?: ZodError;
+    schemaIssues?: readonly StandardSchemaV1.Issue[];
   }) {
     super(message);
 
@@ -389,12 +394,23 @@ export class TypedFetchError<E = unknown> extends Error {
     this.pathParams = pathParams;
     this.jsonPathParams = jsonPathParams;
     this.headers = headers;
-    this.zodError = zodError;
+    this.schemaIssues = schemaIssues;
     this.cause = cause;
     this.response = response;
   }
 
-  toJSON() {
+  toJSON(): {
+    id: TypedFetchError['id'];
+    message: string;
+    status: number;
+    payload: RequestPayload | undefined;
+    errResponse: E | undefined;
+    pathParams: RequestPathParams | undefined;
+    jsonPathParams: Record<string, unknown> | undefined;
+    headers: Record<string, string> | undefined;
+    schemaIssues: readonly StandardSchemaV1.Issue[] | undefined;
+    response: unknown;
+  } {
     return { ...this, message: this.message };
   }
 }
@@ -459,28 +475,56 @@ function logCall(
   };
 }
 
-export function readableDuration(durationMs: number) {
+export function readableDuration(durationMs: number): string {
   if (durationMs < 1000) return `${durationMs}ms`;
 
   const seconds = durationMs / 1000;
   return `${seconds.toFixed(2)}s`;
 }
+function getPathSegmentString(
+  path: StandardSchemaV1.PathSegment | PropertyKey,
+): string {
+  const key = typeof path === 'object' ? path.key : path;
+  if (typeof key === 'number') {
+    return `[${key}]`;
+  } else if (typeof key === 'symbol') {
+    return `[symbol:${key.toString()}]`;
+  } else {
+    return String(key);
+  }
+}
 
-function getZodErrorProps(error: ZodError): {
-  message: string;
-  zodError: ZodError;
-  cause: unknown;
-} {
+function getValidationProps(
+  issues: readonly StandardSchemaV1.Issue[],
+): Partial<TypedFetchError> {
   return {
-    message: error.issues
-      .map(
-        (issue) =>
+    message: issues
+      .map((issue) =>
+        issue.path ?
           `$.${issue.path
-            .map((p) => (typeof p === 'number' ? `[${p}]` : p))
-            .join('.')}: ${issue.message}`,
+            .map(getPathSegmentString)
+            .join('.')}: ${issue.message}`
+        : issue.message,
       )
       .join('\n'),
-    zodError: error,
-    cause: error,
+    schemaIssues: issues,
   };
+}
+
+export function standardResultValidate<I, O = I>(
+  schema: StandardSchemaV1<I, O>,
+  input: unknown,
+): Result<O, readonly StandardSchemaV1.Issue[]> {
+  const result = schema['~standard'].validate(input);
+
+  if (result instanceof Promise)
+    return Result.err<StandardSchemaV1.Issue[]>([
+      { message: 'Async validation not supported' },
+    ]);
+
+  if (result.issues) {
+    return Result.err(result.issues);
+  }
+
+  return Result.ok(result.value);
 }

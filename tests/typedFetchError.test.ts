@@ -60,8 +60,8 @@ describe('TypedFetchError', () => {
         "pathParams": undefined,
         "payload": undefined,
         "response": undefined,
+        "schemaIssues": undefined,
         "status": 500,
-        "zodError": undefined,
       }
     `);
   });
@@ -90,11 +90,9 @@ describe('TypedFetchError', () => {
       id: 'response_validation_error',
       message: 'Zod validation failed',
       cause: zodError,
-      zodError,
     });
 
     expect(error.cause).toBe(zodError);
-    expect(error.zodError).toBe(zodError);
     expect(error.message).toBe('Zod validation failed');
   });
 });
