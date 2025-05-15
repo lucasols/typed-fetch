@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@ls-stack/utils':
-        specifier: ^3.3.2
-        version: 3.3.2
+        specifier: ^3.5.0
+        version: 3.5.0
       '@standard-schema/spec':
         specifier: ^1.0.0
         version: 1.0.0
@@ -303,8 +303,8 @@ packages:
     peerDependencies:
       eslint: ^9.9.1
 
-  '@ls-stack/utils@3.3.2':
-    resolution: {integrity: sha512-TXiISgAUpQZiKL49Ly55txq4WMzf6lovPl8XCg2mLhOblO3og+KzEjb3MdEDFcLUMy8dlYKkVor2SwHklBhY/A==}
+  '@ls-stack/utils@3.5.0':
+    resolution: {integrity: sha512-H83fKwx5NU6JrqEk78N31q6xDEK15pz+cW9uYWp4HFZg60DoTKadqs2zFVLKjU5piEwy6a0Bh1q4pp+5kUlUqw==}
     engines: {node: '>=20.0.0'}
 
   '@nodelib/fs.scandir@2.1.5':
@@ -1765,7 +1765,9 @@ snapshots:
       - supports-color
       - typescript
 
-  '@ls-stack/utils@3.3.2': {}
+  '@ls-stack/utils@3.5.0':
+    dependencies:
+      t-result: 0.2.1
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
