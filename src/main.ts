@@ -1,9 +1,9 @@
 import { safeJsonStringify } from '@ls-stack/utils/safeJson';
 import { __LEGIT_CAST__ } from '@ls-stack/utils/saferTyping';
 import { concatStrings } from '@ls-stack/utils/stringUtils';
-import { Result, resultify } from '@ls-stack/utils/tsResult';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { styleText } from 'node:util';
+import { Result, resultify } from 't-result';
 
 let devLogId = 0;
 
