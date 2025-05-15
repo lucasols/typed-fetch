@@ -27,7 +27,7 @@ export type RequestMultiPartPayload = Record<
   string | File | File[] | RequestPayload | undefined
 >;
 
-const originalMaxRetries = Symbol('originalAttempts');
+const originalMaxRetries: unique symbol = Symbol('originalAttempts');
 
 type RetryContext<E> = {
   /**
