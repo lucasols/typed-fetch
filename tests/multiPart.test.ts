@@ -29,7 +29,7 @@ describe('multipart/form-data requests', () => {
     const result = await typedFetch('upload', {
       method: 'POST',
       host: 'http://localhost:3000',
-      multiPart: {
+      multipart: {
         field1: 'value1',
         field2: 'value2',
       },
@@ -56,7 +56,7 @@ describe('multipart/form-data requests', () => {
     await typedFetch('upload/file', {
       method: 'POST',
       host: 'http://localhost:3000',
-      multiPart: {
+      multipart: {
         textFile: file,
         description: 'A text file',
       },
@@ -79,7 +79,7 @@ describe('multipart/form-data requests', () => {
     await typedFetch('upload/files', {
       method: 'PUT',
       host: 'http://localhost:3000',
-      multiPart: {
+      multipart: {
         textFiles: [file1, file2],
         userId: 'user123',
       },
@@ -102,7 +102,7 @@ describe('multipart/form-data requests', () => {
     await typedFetch('upload/json', {
       method: 'POST',
       host: 'http://localhost:3000',
-      multiPart: {
+      multipart: {
         jsonData,
         metadata: 'some info',
       },
@@ -120,7 +120,7 @@ describe('multipart/form-data requests', () => {
       method: 'POST',
       host: 'http://localhost:3000',
       payload: { key: 'value' },
-      multiPart: { field: 'data' },
+      multipart: { field: 'data' },
     });
 
     assert(!result.ok);
@@ -132,7 +132,7 @@ describe('multipart/form-data requests', () => {
     const result = await typedFetch('upload', {
       method: 'GET',
       host: 'http://localhost:3000',
-      multiPart: { field: 'data' },
+      multipart: { field: 'data' },
     });
 
     assert(!result.ok);

@@ -15,12 +15,12 @@ type LogOptions = {
   logFn?: TypedFetchLogger;
 };
 
-type RequestPayload = Record<string, unknown> | unknown[];
-type RequestPathParams = Record<
+export type RequestPayload = Record<string, unknown> | unknown[];
+export type RequestPathParams = Record<
   string,
   string | number | boolean | string[] | number[] | undefined
 >;
-type RequestMultiPart = Record<
+export type RequestMultiPartPayload = Record<
   string,
   string | File | File[] | RequestPayload | undefined
 >;
@@ -31,7 +31,7 @@ type ApiCallParams<R = unknown, E = unknown> = {
   pathParams?: RequestPathParams;
   headers?: Record<string, string>;
   jsonPathParams?: Record<string, unknown>;
-  multiPart?: RequestMultiPart;
+  multipart?: RequestMultiPartPayload;
   responseSchema?: StandardSchemaV1<R>;
   enableLogs?: boolean | LogOptions;
   disablePathValidation?: boolean;
@@ -61,7 +61,7 @@ export async function typedFetch<R = unknown, E = unknown>(
     disablePathValidation,
     errorResponseSchema,
     getMessageFromRequestError,
-    multiPart,
+    multipart: multiPart,
   }: ApiCallParams<R, E> & { host?: string },
 ): Promise<Result<R, TypedFetchError<E>>> {
   const urlResult = resultify(() =>
@@ -368,7 +368,7 @@ export class TypedFetchError<E = unknown> extends Error {
   readonly schemaIssues: readonly StandardSchemaV1.Issue[] | undefined;
   readonly response: unknown;
   readonly url: string;
-  readonly multiPart: RequestMultiPart | undefined;
+  readonly multiPart: RequestMultiPartPayload | undefined;
 
   constructor({
     id,
@@ -399,7 +399,7 @@ export class TypedFetchError<E = unknown> extends Error {
     headers?: Record<string, string>;
     cause?: unknown;
     schemaIssues?: readonly StandardSchemaV1.Issue[];
-    multiPart?: RequestMultiPart;
+    multiPart?: RequestMultiPartPayload;
   }) {
     super(message);
 
