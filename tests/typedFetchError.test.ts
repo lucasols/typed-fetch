@@ -52,12 +52,12 @@ describe('TypedFetchError', () => {
       {
         "cause": [Error: Validation failed],
         "errResponse": undefined,
+        "formData": undefined,
         "headers": undefined,
         "id": "response_validation_error",
         "jsonPathParams": undefined,
         "message": "Invalid response format",
         "method": undefined,
-        "multiPart": undefined,
         "pathParams": undefined,
         "payload": undefined,
         "response": undefined,
