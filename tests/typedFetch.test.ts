@@ -1,43 +1,22 @@
 import { omit } from '@ls-stack/utils/objUtils';
-import { assert, beforeEach, describe, expect, test, vi } from 'vitest';
+import fetchMock from 'fetch-mock';
+import { afterEach, assert, beforeEach, describe, expect, test } from 'vitest';
 import { z } from 'zod';
-import { typedFetch, type TypedFetchError } from '../src/main';
-
-// Mock the global fetch function
-global.fetch = vi.fn();
-
-const mockFetch = vi.mocked<
-  (url: URL, options: RequestInit) => Promise<Response>
->(global.fetch);
-
-function getErrorObj(obj: TypedFetchError) {
-  const errorObj = obj.toJSON();
-
-  return Object.fromEntries(
-    Object.entries(errorObj).filter(([, value]) => value !== undefined),
-  );
-}
-
-const successResponse = (body: unknown, status = 200) => {
-  return Promise.resolve({
-    ok: status >= 200 && status < 300,
-    status,
-    statusText: status === 200 ? 'OK' : 'Error',
-    json: () => Promise.resolve(body),
-    text: () => Promise.resolve(JSON.stringify(body)),
-  } as Response);
-};
+import { typedFetch } from '../src/main';
+import { getErrorObj, getErrorObjFromResult, getLastCall } from './utils';
 
 beforeEach(() => {
-  vi.resetAllMocks();
-  // Default mock implementation
-  mockFetch.mockImplementation(() => successResponse({ message: 'Success' }));
+  fetchMock.mockGlobal();
+});
+
+afterEach(() => {
+  fetchMock.hardReset();
 });
 
 test('should make a successful GET request and parse the response', async () => {
-  mockFetch.mockImplementation(() =>
-    successResponse({ message: 'Data fetched' }),
-  );
+  fetchMock.get('http://localhost:3000/test/path', {
+    message: 'Data fetched',
+  });
 
   const result = await typedFetch('test/path', {
     method: 'GET',
@@ -45,11 +24,10 @@ test('should make a successful GET request and parse the response', async () => 
     responseSchema: z.object({ message: z.string() }),
   });
 
-  expect(mockFetch.mock.lastCall).toMatchInlineSnapshot(`
+  expect(getLastCall()).toMatchInlineSnapshot(`
     [
       "http://localhost:3000/test/path",
       {
-        "body": undefined,
         "headers": {},
         "method": "GET",
       },
@@ -66,9 +44,10 @@ test('should make a successful GET request and parse the response', async () => 
 });
 
 test('should make a successful POST request with payload and parse the response', async () => {
-  mockFetch.mockImplementation(() =>
-    successResponse({ id: 1, name: 'Test Item' }),
-  );
+  fetchMock.post('http://api.example.com/items', {
+    id: 1,
+    name: 'Test Item',
+  });
 
   const result = await typedFetch('items', {
     method: 'POST',
@@ -77,13 +56,12 @@ test('should make a successful POST request with payload and parse the response'
     responseSchema: z.object({ id: z.number(), name: z.string() }),
   });
 
-  expect(mockFetch.mock.lastCall).toMatchInlineSnapshot(`
+  expect(getLastCall()).toMatchInlineSnapshot(`
     [
       "http://api.example.com/items",
       {
-        "body": "{"name":"Test Item"}",
         "headers": {
-          "Content-Type": "application/json",
+          "content-type": "application/json",
         },
         "method": "POST",
       },
@@ -96,7 +74,9 @@ test('should make a successful POST request with payload and parse the response'
 });
 
 test('should handle requests without a response schema', async () => {
-  mockFetch.mockImplementation(() => successResponse({ anyData: true }));
+  fetchMock.get('http://localhost:8080/no/schema', {
+    anyData: true,
+  });
 
   const result = await typedFetch('no/schema', {
     method: 'GET',
@@ -108,21 +88,22 @@ test('should handle requests without a response schema', async () => {
 });
 
 test('should use URL object directly', async () => {
-  mockFetch.mockImplementation(() => successResponse({ status: 'ok' }));
+  fetchMock.get('http://example.com/api/v1/resource', {
+    success: 'ok',
+  });
 
   const result = await typedFetch(
     new URL('http://example.com/api/v1/resource'),
     {
       method: 'GET',
-      responseSchema: z.object({ status: z.string() }),
+      responseSchema: z.object({ success: z.string() }),
     },
   );
 
-  expect(mockFetch.mock.lastCall).toMatchInlineSnapshot(`
+  expect(getLastCall()).toMatchInlineSnapshot(`
     [
       "http://example.com/api/v1/resource",
       {
-        "body": undefined,
         "headers": {},
         "method": "GET",
       },
@@ -130,7 +111,7 @@ test('should use URL object directly', async () => {
   `);
 
   assert(result.ok);
-  expect(result.value).toEqual({ status: 'ok' });
+  expect(result.value).toEqual({ success: 'ok' });
 });
 
 test('should include path parameters in the URL', async () => {
@@ -142,7 +123,9 @@ test('should include path parameters in the URL', async () => {
     enabled: false,
     tags: ['a', 'b'],
   };
-  mockFetch.mockImplementation(() => successResponse({ success: true }));
+  fetchMock.get('http://localhost:5000/entity', {
+    success: true,
+  });
 
   await typedFetch('entity', {
     method: 'GET',
@@ -150,11 +133,10 @@ test('should include path parameters in the URL', async () => {
     pathParams,
   });
 
-  expect(mockFetch.mock.lastCall).toMatchInlineSnapshot(`
+  expect(getLastCall()).toMatchInlineSnapshot(`
     [
       "http://localhost:5000/entity?id=123&type=user&active=true&enabled=false&tags=a%2Cb",
       {
-        "body": undefined,
         "headers": {},
         "method": "GET",
       },
@@ -163,7 +145,9 @@ test('should include path parameters in the URL', async () => {
 });
 
 test('should include json path parameters in the URL', async () => {
-  mockFetch.mockImplementation(() => successResponse({ success: true }));
+  fetchMock.get('http://localhost:5000/entity', {
+    success: true,
+  });
 
   await typedFetch('entity', {
     method: 'GET',
@@ -176,25 +160,26 @@ test('should include json path parameters in the URL', async () => {
     },
   });
 
-  expect(mockFetch.mock.lastCall).toMatchInlineSnapshot(`
+  expect(getLastCall()).toMatchInlineSnapshot(`
     [
       "http://localhost:5000/entity?data=%7B%22id%22%3A123%2C%22type%22%3A%22user%22%7D",
       {
-        "body": undefined,
         "headers": {},
         "method": "GET",
       },
     ]
   `);
 
-  const lastCallUrl = new URL(mockFetch.mock.lastCall![0]);
+  const lastCallUrl = new URL(getLastCall()[0]);
   expect(lastCallUrl.searchParams.get('data')).toMatchInlineSnapshot(`
     "{"id":123,"type":"user"}"
   `);
 });
 
 test('should include headers in the request', async () => {
-  mockFetch.mockImplementation(() => successResponse({ success: true }));
+  fetchMock.get('http://localhost:5000/entity', {
+    success: true,
+  });
 
   await typedFetch('entity', {
     method: 'GET',
@@ -205,15 +190,39 @@ test('should include headers in the request', async () => {
     },
   });
 
-  expect(mockFetch.mock.lastCall).toMatchInlineSnapshot(`
+  expect(getLastCall()).toMatchInlineSnapshot(`
     [
       "http://localhost:5000/entity",
       {
-        "body": undefined,
         "headers": {
-          "Content-Type": "application/json",
-          "X-API-Key": "1234567890",
+          "content-type": "application/json",
+          "x-api-key": "1234567890",
         },
+        "method": "GET",
+      },
+    ]
+  `);
+});
+
+test('handle full url as string', async () => {
+  fetchMock.get('http://test.com/test', {
+    body: { data: 'success' },
+    status: 200,
+  });
+
+  const result = await typedFetch('http://test.com/test', {
+    method: 'GET',
+  });
+
+  assert(result.ok);
+
+  expect(result.value).toEqual({ data: 'success' });
+
+  expect(getLastCall()).toMatchInlineSnapshot(`
+    [
+      "http://test.com/test",
+      {
+        "headers": {},
         "method": "GET",
       },
     ]
@@ -229,10 +238,10 @@ describe('error handling', () => {
     assert(!result.ok);
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
-        "id": "invalid_path",
+        "id": "invalid_options",
         "message": "Path "/leading/slash" should not start or end with /",
         "status": 0,
-        "url": "http://test.com//leading/slash",
+        "url": "http://test.com/leading/slash",
       }
     `);
   });
@@ -245,7 +254,7 @@ describe('error handling', () => {
     assert(!result.ok);
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
-        "id": "invalid_path",
+        "id": "invalid_options",
         "message": "Path "trailing/slash/" should not start or end with /",
         "status": 0,
         "url": "http://test.com/trailing/slash/",
@@ -261,7 +270,7 @@ describe('error handling', () => {
     assert(!result.ok);
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
-        "id": "invalid_path",
+        "id": "invalid_options",
         "message": "Path "double//slash" should not contain //",
         "status": 0,
         "url": "http://test.com/double//slash",
@@ -270,8 +279,8 @@ describe('error handling', () => {
   });
 
   test('should return an error if fetch itself fails', async () => {
-    mockFetch.mockImplementation(() => {
-      throw new Error('Failed to fetch');
+    fetchMock.get('http://fail.com/network/error', {
+      throws: new Error('Failed to fetch'),
     });
 
     const result = await typedFetch('network/error', {
@@ -292,14 +301,10 @@ describe('error handling', () => {
   });
 
   test('should return an error for non-2xx status codes', async () => {
-    mockFetch.mockImplementation(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ error: 'NF' }), {
-          status: 404,
-          statusText: 'Not Found',
-        }),
-      ),
-    );
+    fetchMock.get('http://test.com/not/found', {
+      status: 404,
+      body: { error: 'NF' },
+    });
 
     const result = await typedFetch('not/found', {
       method: 'GET',
@@ -321,15 +326,9 @@ describe('error handling', () => {
   });
 
   test('should return an error for invalid JSON response', async () => {
-    mockFetch.mockImplementation(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        text: () => Promise.resolve('This is not JSON'),
-        // json() would reject in a real scenario, but text() resolves
-      } as Response),
-    );
+    fetchMock.get('http://test.com/invalid/json', {
+      body: 'This is not JSON',
+    });
 
     const result = await typedFetch('invalid/json', {
       method: 'GET',
@@ -349,9 +348,9 @@ describe('error handling', () => {
   });
 
   test('should return an error if response validation fails', async () => {
-    mockFetch.mockImplementation(() =>
-      successResponse({ name: 'Test Name', age: 'twenty', id: [1, 2, '3'] }),
-    );
+    fetchMock.get('http://test.com/validation/fail', {
+      body: { name: 'Test Name', age: 'twenty', id: [1, 2, '3'] },
+    });
 
     const result = await typedFetch('validation/fail', {
       method: 'GET',
@@ -414,7 +413,7 @@ describe('error handling', () => {
 
     assert(!result.ok);
 
-    expect(result.error.id).toBe('invalid_payload');
+    expect(result.error.id).toBe('invalid_options');
   });
 
   test('should return an error if payload is provided for DELETE request', async () => {
@@ -428,7 +427,7 @@ describe('error handling', () => {
 
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
-        "id": "invalid_payload",
+        "id": "invalid_options",
         "message": "Payload or multiPart is not allowed for GET or DELETE requests",
         "payload": {
           "name": "Test Item",
@@ -440,14 +439,10 @@ describe('error handling', () => {
   });
 
   test('getMessageFromRequestError', async () => {
-    mockFetch.mockImplementation(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ error: 'NF' }), {
-          status: 404,
-          statusText: 'Not Found',
-        }),
-      ),
-    );
+    fetchMock.get('http://test.com/not/found', {
+      body: { error: 'NF' },
+      status: 404,
+    });
 
     const result = await typedFetch('not/found', {
       method: 'GET',
@@ -485,10 +480,30 @@ describe('error handling', () => {
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
         "cause": [TypeError: Invalid URL],
-        "id": "invalid_url",
-        "message": "Invalid URL",
+        "id": "invalid_options",
+        "message": "Invalid url, path or host param: Invalid URL",
         "status": 0,
         "url": "___/invalid-url",
+      }
+    `);
+  });
+
+  test('pass full url and host', async () => {
+    fetchMock.any({
+      data: 'success',
+    });
+
+    const result = await typedFetch('http://test.com/test', {
+      method: 'GET',
+      host: 'http://test.com',
+    });
+
+    expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
+      {
+        "id": "invalid_options",
+        "message": "Full url passed as string and host param should not be used together",
+        "status": 0,
+        "url": "http://test.com/test",
       }
     `);
   });

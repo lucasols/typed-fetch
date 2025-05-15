@@ -1,5 +1,7 @@
+import { cachedGetter } from '@ls-stack/utils/cache';
 import { safeJsonStringify } from '@ls-stack/utils/safeJson';
 import { __LEGIT_CAST__ } from '@ls-stack/utils/saferTyping';
+import { sleep } from '@ls-stack/utils/sleep';
 import { concatStrings } from '@ls-stack/utils/stringUtils';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { styleText } from 'node:util';
@@ -25,6 +27,20 @@ export type RequestMultiPartPayload = Record<
   string | File | File[] | RequestPayload | undefined
 >;
 
+const originalMaxRetries = Symbol('originalAttempts');
+
+type RetryContext<E> = {
+  /**
+   * The error that occurred, `invalid_options` and `aborted` errors are not retried
+   */
+  error: TypedFetchError<E>;
+  retryAttempt: number;
+  /**
+   * The duration from the start of the request to the error
+   */
+  errorDuration: number;
+};
+
 type ApiCallParams<R = unknown, E = unknown> = {
   method: HttpMethod;
   payload?: RequestPayload;
@@ -37,19 +53,23 @@ type ApiCallParams<R = unknown, E = unknown> = {
   disablePathValidation?: boolean;
   errorResponseSchema?: StandardSchemaV1<E>;
   getMessageFromRequestError?: (errorResponse: E) => string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  host?: string;
+  retry?: {
+    maxRetries: number;
+    [originalMaxRetries]?: number;
+    delayMs: number | ((attempt: number) => number);
+    condition?: (context: RetryContext<E>) => boolean;
+    onRetry?: (context: RetryContext<E>) => void;
+  };
 };
 
 export async function typedFetch<R = unknown, E = unknown>(
-  path: URL,
-  options: ApiCallParams<R, E>,
-): Promise<Result<R, TypedFetchError<E>>>;
-export async function typedFetch<R = unknown, E = unknown>(
-  path: string,
-  options: ApiCallParams<R, E> & { host: string },
-): Promise<Result<R, TypedFetchError<E>>>;
-export async function typedFetch<R = unknown, E = unknown>(
-  path: string | URL,
-  {
+  pathOrUrl: string | URL,
+  options: ApiCallParams<R, E> & { host?: string },
+): Promise<Result<R, TypedFetchError<E>>> {
+  const {
     payload,
     responseSchema,
     method,
@@ -61,21 +81,26 @@ export async function typedFetch<R = unknown, E = unknown>(
     disablePathValidation,
     errorResponseSchema,
     getMessageFromRequestError,
-    multipart: multiPart,
-  }: ApiCallParams<R, E> & { host?: string },
-): Promise<Result<R, TypedFetchError<E>>> {
+    multipart,
+    timeoutMs,
+    signal,
+    retry,
+  } = options;
+
+  const startTimestamp = retry || enableLogs ? Date.now() : undefined;
+
   const urlResult = resultify(() =>
-    typeof path === 'string' ? new URL(path, host) : path,
+    typeof pathOrUrl === 'string' ? new URL(pathOrUrl, host) : pathOrUrl,
   );
 
   if (!urlResult.ok) {
     return Result.err(
       new TypedFetchError({
-        id: 'invalid_url',
-        message: urlResult.error.message,
+        id: 'invalid_options',
+        message: `Invalid url, path or host param: ${urlResult.error.message}`,
         status: 0,
         cause: urlResult.error,
-        ...getGenericErrorPayload(),
+        ...getGenericErrorPayload(host ? `${host}/${pathOrUrl}` : pathOrUrl),
       }),
     );
   }
@@ -88,16 +113,26 @@ export async function typedFetch<R = unknown, E = unknown>(
         ++devLogId,
         url,
         method,
+        startTimestamp ?? 0,
         enableLogs === true ? undefined : enableLogs,
       )
     : undefined;
 
-  if (!disablePathValidation && typeof path === 'string') {
-    if (path.startsWith('/') || path.endsWith('/')) {
+  if (!disablePathValidation && typeof pathOrUrl === 'string') {
+    if (pathOrUrl.startsWith('/') || pathOrUrl.endsWith('/')) {
       return errorResult(
         new TypedFetchError({
-          id: 'invalid_path',
-          message: `Path "${path}" should not start or end with /`,
+          id: 'invalid_options',
+          message: `Path "${pathOrUrl}" should not start or end with /`,
+        }),
+      );
+    }
+
+    if (host && pathOrUrl.includes('://')) {
+      return errorResult(
+        new TypedFetchError({
+          id: 'invalid_options',
+          message: `Full url passed as string and host param should not be used together`,
         }),
       );
     }
@@ -105,26 +140,26 @@ export async function typedFetch<R = unknown, E = unknown>(
     if (url.pathname.includes('//')) {
       return errorResult(
         new TypedFetchError({
-          id: 'invalid_path',
-          message: `Path "${path}" should not contain //`,
+          id: 'invalid_options',
+          message: `Path "${pathOrUrl}" should not contain //`,
         }),
       );
     }
   }
 
-  if (payload && multiPart) {
+  if (payload && multipart) {
     return errorResult(
       new TypedFetchError({
-        id: 'invalid_payload',
+        id: 'invalid_options',
         message: 'Cannot use both payload and multiPart',
       }),
     );
   }
 
-  if ((method === 'GET' || method === 'DELETE') && (payload || multiPart)) {
+  if ((method === 'GET' || method === 'DELETE') && (payload || multipart)) {
     return errorResult(
       new TypedFetchError({
-        id: 'invalid_payload',
+        id: 'invalid_options',
         message:
           'Payload or multiPart is not allowed for GET or DELETE requests',
       }),
@@ -148,7 +183,7 @@ export async function typedFetch<R = unknown, E = unknown>(
       if (!jsonString) {
         return errorResult(
           new TypedFetchError({
-            id: 'invalid_payload',
+            id: 'invalid_options',
             message: `Invalid JSON path parameter: ${key}`,
           }),
         );
@@ -161,10 +196,10 @@ export async function typedFetch<R = unknown, E = unknown>(
   const finalHeaders = { ...headers };
   let body: BodyInit | undefined;
 
-  if (multiPart) {
+  if (multipart) {
     const formData = new FormData();
 
-    for (const [key, value] of Object.entries(multiPart)) {
+    for (const [key, value] of Object.entries(multipart)) {
       if (value === undefined) continue;
 
       if (value instanceof File) {
@@ -184,7 +219,7 @@ export async function typedFetch<R = unknown, E = unknown>(
           // Handle potential stringification errors
           return errorResult(
             new TypedFetchError({
-              id: 'invalid_payload',
+              id: 'invalid_options',
               message: `Could not stringify value for multipart key: ${key}`,
             }),
           );
@@ -204,22 +239,48 @@ export async function typedFetch<R = unknown, E = unknown>(
     }
   }
 
+  let abortSignal: AbortSignal | undefined = signal;
+
+  if (timeoutMs) {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+
+    abortSignal =
+      abortSignal ?
+        AbortSignal.any([abortSignal, timeoutSignal])
+      : timeoutSignal;
+  }
+
   const response = await resultify(() =>
     fetch(url, {
       headers: finalHeaders,
       method,
       body,
+      signal: abortSignal,
     }),
   );
 
-  if (!response.ok)
+  if (!response.ok) {
+    const baseErrProps = {
+      message: response.error.message,
+      cause: response.error,
+    };
+
+    if (response.error.name === 'TimeoutError') {
+      return errorResult(
+        new TypedFetchError({ id: 'timeout', ...baseErrProps }),
+      );
+    }
+
+    if (response.error.name === 'AbortError') {
+      return errorResult(
+        new TypedFetchError({ id: 'aborted', ...baseErrProps }),
+      );
+    }
+
     return errorResult(
-      new TypedFetchError({
-        id: 'network_or_cors_error',
-        message: response.error.message,
-        cause: response.error,
-      }),
+      new TypedFetchError({ id: 'network_or_cors_error', ...baseErrProps }),
     );
+  }
 
   const responseJSON = await resultify(() => response.value.text());
 
@@ -312,23 +373,23 @@ export async function typedFetch<R = unknown, E = unknown>(
 
   logEnd?.success();
 
-  return Result.ok(validResponse.value);
-
-  function getGenericErrorPayload() {
+  function getGenericErrorPayload(urlUsed: URL | string) {
     return {
       payload,
       pathParams,
       jsonPathParams,
       headers,
-      multiPart,
+      multiPart: multipart,
       url:
-        typeof path === 'string' ?
-          `${host}/${path}`
-        : `${path.host}/${path.pathname}`,
+        typeof urlUsed === 'string' ? urlUsed : (
+          `${urlUsed.protocol}//${urlUsed.host}${urlUsed.pathname}`
+        ),
     };
   }
 
-  function errorResult(error: TypedFetchError<E>) {
+  return Result.ok(validResponse.value);
+
+  async function errorResult(error: TypedFetchError<E>) {
     logEnd?.error(
       error.id === 'request_error' ? error.status
       : error.status ? `${error.id}(${error.status})`
@@ -340,10 +401,55 @@ export async function typedFetch<R = unknown, E = unknown>(
       message: error.message,
       status: error.status || 0,
       errResponse: error.errResponse,
-      ...getGenericErrorPayload(),
+      ...getGenericErrorPayload(url),
     });
 
     newError.stack = error.stack;
+
+    const canRetryErrorId =
+      error.id !== 'invalid_options' && error.id !== 'aborted';
+
+    const errorDuration = cachedGetter(
+      () => Date.now() - (startTimestamp ?? 0),
+    );
+
+    const maxAttempts = retry?.[originalMaxRetries] ?? retry?.maxRetries ?? 0;
+
+    const retryAttempt = maxAttempts - (retry?.maxRetries ?? 0) + 1;
+
+    if (
+      retry?.maxRetries &&
+      retry.maxRetries > 0 &&
+      canRetryErrorId &&
+      (retry.condition?.({
+        error,
+        retryAttempt,
+        errorDuration: errorDuration.value,
+      }) ??
+        true)
+    ) {
+      const delay =
+        typeof retry.delayMs === 'function' ?
+          retry.delayMs(retryAttempt)
+        : retry.delayMs;
+
+      await sleep(delay);
+
+      retry.onRetry?.({
+        error,
+        retryAttempt,
+        errorDuration: errorDuration.value,
+      });
+
+      return typedFetch(pathOrUrl, {
+        ...options,
+        retry: {
+          ...retry,
+          [originalMaxRetries]: maxAttempts,
+          maxRetries: retry.maxRetries - 1,
+        },
+      });
+    }
 
     return Result.err(newError);
   }
@@ -351,13 +457,13 @@ export async function typedFetch<R = unknown, E = unknown>(
 
 export class TypedFetchError<E = unknown> extends Error {
   readonly id:
-    | 'invalid_url'
-    | 'invalid_path'
+    | 'invalid_options'
+    | 'aborted'
     | 'network_or_cors_error'
     | 'request_error'
     | 'invalid_json'
     | 'response_validation_error'
-    | 'invalid_payload';
+    | 'timeout';
   readonly status: number;
   readonly payload: RequestPayload | undefined;
   readonly errResponse: E | undefined;
@@ -453,12 +559,13 @@ function logCall(
   logId: number,
   url: URL,
   method: string,
+  startTimestamp: number,
   { indent = 0, hostAlias, logFn = defaultLogFn }: LogOptions = {},
 ) {
-  function log(startTimestamp = 0, errorStatus: number | string = 0) {
+  function log(timestamp = 0, errorStatus: number | string = 0) {
     const logText = concatStrings(
       ' '.repeat(indent),
-      !startTimestamp ?
+      !timestamp ?
         `${String(logId)}>>`
       : styleText(
           'bold',
@@ -469,14 +576,14 @@ function logCall(
         hostAlias ?? url.host,
       )}${url.pathname}`,
       !!errorStatus && styleText('red', ` ${errorStatus} `),
-      !!startTimestamp && [
+      !!timestamp && [
         ' ',
-        styleText('gray', readableDuration(Date.now() - startTimestamp)),
+        styleText('gray', readableDuration(Date.now() - timestamp)),
       ],
     );
 
     logFn(logText, {
-      startTimestamp,
+      startTimestamp: timestamp,
       errorStatus,
       logId,
       method,
@@ -485,8 +592,6 @@ function logCall(
   }
 
   log();
-
-  const startTimestamp = Date.now();
 
   return {
     success: () => log(startTimestamp),

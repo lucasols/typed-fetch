@@ -1,31 +1,23 @@
-import { assert, beforeEach, describe, expect, test, vi } from 'vitest';
+import fetchMock from 'fetch-mock';
+import { afterEach, assert, beforeEach, describe, expect, test } from 'vitest';
 import { z } from 'zod';
 import { typedFetch } from '../src/main';
-
-// Mock the global fetch function
-global.fetch = vi.fn();
-
-const mockFetch = vi.mocked<
-  (url: URL, options?: RequestInit) => Promise<Response>
->(global.fetch);
-
-function successResponse(body: unknown, status = 200) {
-  return Promise.resolve({
-    ok: status >= 200 && status < 300,
-    status,
-    statusText: status === 200 ? 'OK' : 'Error',
-    json: () => Promise.resolve(body),
-    text: () => Promise.resolve(JSON.stringify(body)),
-  } as Response);
-}
+import { getLastCall } from './utils';
 
 beforeEach(() => {
-  vi.resetAllMocks();
-  mockFetch.mockImplementation(() => successResponse({ message: 'Success' }));
+  fetchMock.mockGlobal();
+});
+
+afterEach(() => {
+  fetchMock.hardReset();
 });
 
 describe('multipart/form-data requests', () => {
   test('should send basic string data', async () => {
+    fetchMock.post('http://localhost:3000/upload', {
+      message: 'Success',
+    });
+
     const result = await typedFetch('upload', {
       method: 'POST',
       host: 'http://localhost:3000',
@@ -39,18 +31,22 @@ describe('multipart/form-data requests', () => {
     assert(result.ok);
     expect(result.value).toEqual({ message: 'Success' });
 
-    const lastCall = mockFetch.mock.lastCall;
-    expect(lastCall?.[0].toString()).toBe('http://localhost:3000/upload');
-    expect(lastCall?.[1]?.method).toBe('POST');
-    expect(lastCall?.[1]?.headers).toEqual({}); // Content-Type should be unset
-    expect(lastCall?.[1]?.body).toBeInstanceOf(FormData);
+    const lastCall = getLastCall({ includeBody: true });
+    expect(lastCall[0].toString()).toBe('http://localhost:3000/upload');
+    expect(lastCall[1].method).toBe('POST');
+    expect(lastCall[1].headers).toEqual({}); // Content-Type should be unset
+    expect(lastCall[1].body).toBeInstanceOf(FormData);
 
-    const formData = lastCall?.[1]?.body as FormData;
+    const formData = lastCall[1].body as FormData;
     expect(formData.get('field1')).toBe('value1');
     expect(formData.get('field2')).toBe('value2');
   });
 
   test('should send a File object', async () => {
+    fetchMock.post('http://localhost:3000/upload/file', {
+      message: 'Success',
+    });
+
     const file = new File(['content'], 'test.txt', { type: 'text/plain' });
 
     await typedFetch('upload/file', {
@@ -62,9 +58,9 @@ describe('multipart/form-data requests', () => {
       },
     });
 
-    const lastCall = mockFetch.mock.lastCall;
-    expect(lastCall?.[1]?.body).toBeInstanceOf(FormData);
-    const formData = lastCall?.[1]?.body as FormData;
+    const lastCall = getLastCall({ includeBody: true });
+    expect(lastCall[1].body).toBeInstanceOf(FormData);
+    const formData = lastCall[1].body as FormData;
     expect(formData.get('description')).toBe('A text file');
     expect(formData.get('textFile')).toBeInstanceOf(File);
     const sentFile = formData.get('textFile') as File;
@@ -73,6 +69,10 @@ describe('multipart/form-data requests', () => {
   });
 
   test('should send an array of File objects', async () => {
+    fetchMock.put('http://localhost:3000/upload/files', {
+      message: 'Success',
+    });
+
     const file1 = new File(['content1'], 'file1.txt', { type: 'text/plain' });
     const file2 = new File(['content2'], 'file2.txt', { type: 'text/csv' });
 
@@ -85,9 +85,9 @@ describe('multipart/form-data requests', () => {
       },
     });
 
-    const lastCall = mockFetch.mock.lastCall;
-    expect(lastCall?.[1]?.body).toBeInstanceOf(FormData);
-    const formData = lastCall?.[1]?.body as FormData;
+    const lastCall = getLastCall({ includeBody: true });
+    expect(lastCall[1].body).toBeInstanceOf(FormData);
+    const formData = lastCall[1].body as FormData;
     expect(formData.get('userId')).toBe('user123');
     const files = formData.getAll('textFiles');
     expect(files).toHaveLength(2);
@@ -97,6 +97,10 @@ describe('multipart/form-data requests', () => {
   });
 
   test('should send a JSON object stringified', async () => {
+    fetchMock.post('http://localhost:3000/upload/json', {
+      message: 'Success',
+    });
+
     const jsonData = { id: 1, config: { enabled: true } };
 
     await typedFetch('upload/json', {
@@ -108,9 +112,9 @@ describe('multipart/form-data requests', () => {
       },
     });
 
-    const lastCall = mockFetch.mock.lastCall;
-    expect(lastCall?.[1]?.body).toBeInstanceOf(FormData);
-    const formData = lastCall?.[1]?.body as FormData;
+    const lastCall = getLastCall({ includeBody: true });
+    expect(lastCall[1].body).toBeInstanceOf(FormData);
+    const formData = lastCall[1].body as FormData;
     expect(formData.get('metadata')).toBe('some info');
     expect(formData.get('jsonData')).toBe(JSON.stringify(jsonData));
   });
@@ -124,7 +128,7 @@ describe('multipart/form-data requests', () => {
     });
 
     assert(!result.ok);
-    expect(result.error.id).toBe('invalid_payload');
+    expect(result.error.id).toBe('invalid_options');
     expect(result.error.message).toBe('Cannot use both payload and multiPart');
   });
 
@@ -136,7 +140,7 @@ describe('multipart/form-data requests', () => {
     });
 
     assert(!result.ok);
-    expect(result.error.id).toBe('invalid_payload');
+    expect(result.error.id).toBe('invalid_options');
     expect(result.error.message).toContain('not allowed for GET');
     expect(result.error.multiPart).toEqual({ field: 'data' });
   });
