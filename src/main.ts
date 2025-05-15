@@ -22,7 +22,7 @@ export type RequestPathParams = Record<
   string,
   string | number | boolean | string[] | number[] | undefined
 >;
-export type RequestMultiPartPayload = Record<
+export type RequestFormDataPayload = Record<
   string,
   string | File | File[] | RequestPayload | undefined
 >;
@@ -42,20 +42,65 @@ type RetryContext<E> = {
 };
 
 type ApiCallParams<R = unknown, E = unknown> = {
+  /**
+   * The method to use for the request
+   */
   method: HttpMethod;
-  payload?: RequestPayload;
-  pathParams?: RequestPathParams;
-  headers?: Record<string, string>;
-  jsonPathParams?: Record<string, unknown>;
-  multipart?: RequestMultiPartPayload;
-  responseSchema?: StandardSchemaV1<R>;
-  enableLogs?: boolean | LogOptions;
-  disablePathValidation?: boolean;
-  errorResponseSchema?: StandardSchemaV1<E>;
-  getMessageFromRequestError?: (errorResponse: E) => string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
+  /**
+   * The host to use for the request
+   */
   host?: string;
+  /**
+   * The payload to send in the request body, will be stringified to JSON
+   */
+  payload?: RequestPayload;
+  /**
+   * The path params to be used in the request url
+   */
+  pathParams?: RequestPathParams;
+  /**
+   * The headers to be used in the request
+   */
+  headers?: Record<string, string>;
+  /**
+   * The JSON path params to be used in the request url
+   */
+  jsonPathParams?: Record<string, unknown>;
+  /**
+   * The form data to be sent in the request body, can be a FormData object or an {@link RequestFormDataPayload} object
+   */
+  formData?: RequestFormDataPayload | FormData;
+  /**
+   * The schema to validate the response against
+   */
+  responseSchema?: StandardSchemaV1<R>;
+  /**
+   * Enable logging of the request and response
+   */
+  enableLogs?: boolean | LogOptions;
+  /**
+   * Disable path validation
+   */
+  disablePathValidation?: boolean;
+  /**
+   * The schema to validate the error response against
+   */
+  errorResponseSchema?: StandardSchemaV1<E>;
+  /**
+   * A function to get the message from the error response
+   */
+  getMessageFromRequestError?: (errorResponse: E) => string;
+  /**
+   * The timeout in milliseconds
+   */
+  timeoutMs?: number;
+  /**
+   * The abort signal to use for the request
+   */
+  signal?: AbortSignal;
+  /**
+   * The retry options
+   */
   retry?: {
     maxRetries: number;
     [originalMaxRetries]?: number;
@@ -81,7 +126,7 @@ export async function typedFetch<R = unknown, E = unknown>(
     disablePathValidation,
     errorResponseSchema,
     getMessageFromRequestError,
-    multipart,
+    formData,
     timeoutMs,
     signal,
     retry,
@@ -147,7 +192,7 @@ export async function typedFetch<R = unknown, E = unknown>(
     }
   }
 
-  if (payload && multipart) {
+  if (payload && formData) {
     return errorResult(
       new TypedFetchError({
         id: 'invalid_options',
@@ -156,7 +201,7 @@ export async function typedFetch<R = unknown, E = unknown>(
     );
   }
 
-  if ((method === 'GET' || method === 'DELETE') && (payload || multipart)) {
+  if ((method === 'GET' || method === 'DELETE') && (payload || formData)) {
     return errorResult(
       new TypedFetchError({
         id: 'invalid_options',
@@ -196,25 +241,27 @@ export async function typedFetch<R = unknown, E = unknown>(
   const finalHeaders = { ...headers };
   let body: BodyInit | undefined;
 
-  if (multipart) {
-    const formData = new FormData();
+  if (formData instanceof FormData) {
+    body = formData;
+  } else if (formData) {
+    const formDataFromObj = new FormData();
 
-    for (const [key, value] of Object.entries(multipart)) {
+    for (const [key, value] of Object.entries(formData)) {
       if (value === undefined) continue;
 
       if (value instanceof File) {
-        formData.append(key, value);
+        formDataFromObj.append(key, value);
       } else if (Array.isArray(value) && value[0] instanceof File) {
         for (const file of value) {
           if (file instanceof File) {
-            formData.append(key, file);
+            formDataFromObj.append(key, file);
           }
         }
       } else if (typeof value === 'object') {
         // Handle JSON objects by stringifying them and sending as text
         const jsonString = safeJsonStringify(value);
         if (jsonString !== undefined) {
-          formData.append(key, jsonString);
+          formDataFromObj.append(key, jsonString);
         } else {
           // Handle potential stringification errors
           return errorResult(
@@ -225,10 +272,10 @@ export async function typedFetch<R = unknown, E = unknown>(
           );
         }
       } else {
-        formData.append(key, String(value));
+        formDataFromObj.append(key, String(value));
       }
     }
-    body = formData;
+    body = formDataFromObj;
     // Let the browser set the Content-Type for multipart/form-data
     delete finalHeaders['Content-Type'];
     delete finalHeaders['content-type'];
@@ -379,7 +426,7 @@ export async function typedFetch<R = unknown, E = unknown>(
       pathParams,
       jsonPathParams,
       headers,
-      multiPart: multipart,
+      formData,
       url:
         typeof urlUsed === 'string' ? urlUsed : (
           `${urlUsed.protocol}//${urlUsed.host}${urlUsed.pathname}`
@@ -476,7 +523,7 @@ export class TypedFetchError<E = unknown> extends Error {
   readonly schemaIssues: readonly StandardSchemaV1.Issue[] | undefined;
   readonly response: unknown;
   readonly url: string;
-  readonly multiPart: RequestMultiPartPayload | undefined;
+  readonly formData: RequestFormDataPayload | FormData | undefined;
   readonly retryAttempt: number | undefined;
 
   constructor({
@@ -493,7 +540,7 @@ export class TypedFetchError<E = unknown> extends Error {
     cause,
     schemaIssues,
     url,
-    multiPart,
+    formData,
     retryAttempt,
   }: {
     id: TypedFetchError['id'];
@@ -509,7 +556,7 @@ export class TypedFetchError<E = unknown> extends Error {
     headers?: Record<string, string>;
     cause?: unknown;
     schemaIssues?: readonly StandardSchemaV1.Issue[];
-    multiPart?: RequestMultiPartPayload;
+    formData?: RequestFormDataPayload | FormData;
     retryAttempt?: number;
   }) {
     super(message);
@@ -526,7 +573,7 @@ export class TypedFetchError<E = unknown> extends Error {
     this.cause = cause;
     this.response = response;
     this.url = url ?? '?';
-    this.multiPart = multiPart;
+    this.formData = formData;
     this.retryAttempt = retryAttempt;
   }
 
