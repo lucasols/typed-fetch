@@ -396,12 +396,18 @@ export async function typedFetch<R = unknown, E = unknown>(
       : error.id,
     );
 
+    const maxAttempts = retry?.[originalMaxRetries] ?? retry?.maxRetries ?? 0;
+
+    const retryAttempt = maxAttempts - (retry?.maxRetries ?? 0) + 1;
+
     const newError = new TypedFetchError<E>({
       ...error,
       message: error.message,
       status: error.status || 0,
       errResponse: error.errResponse,
       ...getGenericErrorPayload(url),
+      retryAttempt:
+        maxAttempts === 0 || retryAttempt === 1 ? undefined : retryAttempt - 1,
     });
 
     newError.stack = error.stack;
@@ -412,10 +418,6 @@ export async function typedFetch<R = unknown, E = unknown>(
     const errorDuration = cachedGetter(
       () => Date.now() - (startTimestamp ?? 0),
     );
-
-    const maxAttempts = retry?.[originalMaxRetries] ?? retry?.maxRetries ?? 0;
-
-    const retryAttempt = maxAttempts - (retry?.maxRetries ?? 0) + 1;
 
     if (
       retry?.maxRetries &&
@@ -475,6 +477,7 @@ export class TypedFetchError<E = unknown> extends Error {
   readonly response: unknown;
   readonly url: string;
   readonly multiPart: RequestMultiPartPayload | undefined;
+  readonly retryAttempt: number | undefined;
 
   constructor({
     id,
@@ -491,6 +494,7 @@ export class TypedFetchError<E = unknown> extends Error {
     schemaIssues,
     url,
     multiPart,
+    retryAttempt,
   }: {
     id: TypedFetchError['id'];
     message: string;
@@ -506,6 +510,7 @@ export class TypedFetchError<E = unknown> extends Error {
     cause?: unknown;
     schemaIssues?: readonly StandardSchemaV1.Issue[];
     multiPart?: RequestMultiPartPayload;
+    retryAttempt?: number;
   }) {
     super(message);
 
@@ -522,6 +527,7 @@ export class TypedFetchError<E = unknown> extends Error {
     this.response = response;
     this.url = url ?? '?';
     this.multiPart = multiPart;
+    this.retryAttempt = retryAttempt;
   }
 
   toJSON(): {
@@ -535,6 +541,7 @@ export class TypedFetchError<E = unknown> extends Error {
     headers: Record<string, string> | undefined;
     schemaIssues: readonly StandardSchemaV1.Issue[] | undefined;
     response: unknown;
+    retryAttempt: number | undefined;
   } {
     return { ...this, message: this.message };
   }

@@ -61,6 +61,7 @@ describe('TypedFetchError', () => {
         "pathParams": undefined,
         "payload": undefined,
         "response": undefined,
+        "retryAttempt": undefined,
         "schemaIssues": undefined,
         "status": 500,
         "url": "?",

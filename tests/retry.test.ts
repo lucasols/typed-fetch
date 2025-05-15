@@ -97,6 +97,7 @@ test('should return the last error if all retry attempts fail', async () => {
       "response": {
         "error": "Retry 3 failed",
       },
+      "retryAttempt": 3,
       "status": 504,
       "url": "http://test.com/api",
     }
@@ -248,6 +249,7 @@ test('should attempt only once if retry.attempts is 1', async () => {
       "cause": [TypeError: Network failure 2],
       "id": "network_or_cors_error",
       "message": "Network failure 2",
+      "retryAttempt": 1,
       "status": 0,
       "url": "http://test.com/api",
     }
