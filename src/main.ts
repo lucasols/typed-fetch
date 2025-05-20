@@ -594,12 +594,18 @@ export class TypedFetchError<E = unknown> extends Error {
     const { headers, formData, ...rest } = this;
 
     const maskedHeaders: Record<string, string> = {};
+    let hasHeaders = false;
 
     for (const [key, value] of Object.entries(headers ?? {})) {
       maskedHeaders[key] = maskHeaderValue(value);
+      hasHeaders = true;
     }
 
-    return { ...rest, message: this.message, headers: maskedHeaders };
+    return {
+      ...rest,
+      message: this.message,
+      headers: hasHeaders ? maskedHeaders : undefined,
+    };
   }
 }
 
