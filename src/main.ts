@@ -596,16 +596,16 @@ export class TypedFetchError<E = unknown> extends Error {
     const maskedHeaders: Record<string, string> = {};
 
     for (const [key, value] of Object.entries(headers ?? {})) {
-      maskedHeaders[key] = this.maskHeaderValue(value);
+      maskedHeaders[key] = maskHeaderValue(value);
     }
 
     return { ...rest, message: this.message, headers: maskedHeaders };
   }
+}
 
-  private maskHeaderValue(value: string): string {
-    const visible = Math.min(4, Math.ceil(value.length / 2));
-    return value.slice(0, visible) + '*'.repeat(value.length - visible);
-  }
+function maskHeaderValue(value: string): string {
+  const visible = Math.min(4, Math.ceil(value.length / 2));
+  return value.slice(0, visible) + '*'.repeat(value.length - visible);
 }
 
 export type TypedFetchLogger = (
