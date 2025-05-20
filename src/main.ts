@@ -427,6 +427,7 @@ export async function typedFetch<R = unknown, E = unknown>(
       jsonPathParams,
       headers,
       formData,
+      method,
       url:
         typeof urlUsed === 'string' ? urlUsed : (
           `${urlUsed.protocol}//${urlUsed.host}${urlUsed.pathname}`
@@ -582,6 +583,7 @@ export class TypedFetchError<E = unknown> extends Error {
     message: string;
     status: number;
     payload: RequestPayload | undefined;
+    method: HttpMethod | undefined;
     errResponse: E | undefined;
     pathParams: RequestPathParams | undefined;
     jsonPathParams: Record<string, unknown> | undefined;
