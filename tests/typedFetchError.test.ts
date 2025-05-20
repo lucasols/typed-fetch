@@ -77,6 +77,10 @@ describe('TypedFetchError', () => {
     });
 
     expect(error.cause).toBe(originalCause);
+
+    const json = error.toJSON();
+
+    expect(JSON.stringify(json)).toMatchInlineSnapshot(`"{"id":"network_or_cors_error","status":0,"url":"?","cause":{},"message":"Network request failed"}"`);
   });
 
   test('should handle ZodError in cause if provided', () => {

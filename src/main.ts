@@ -592,7 +592,7 @@ export class TypedFetchError<E = unknown> extends Error {
     response: unknown;
     retryAttempt: number | undefined;
   } {
-    const { headers, formData, ...rest } = this;
+    const { headers, formData, cause, ...rest } = this;
 
     const maskedHeaders: Record<string, string> = {};
     let hasHeaders = false;
@@ -602,10 +602,20 @@ export class TypedFetchError<E = unknown> extends Error {
       hasHeaders = true;
     }
 
+    let causeToLog = cause;
+
+    if (cause instanceof Error) {
+      causeToLog = {
+        name: cause.name,
+        message: cause.message,
+      };
+    }
+
     return {
       ...rest,
       message: this.message,
       headers: hasHeaders ? maskedHeaders : undefined,
+      cause: causeToLog,
     };
   }
 }
