@@ -28,7 +28,10 @@ test('should abort when AbortSignal is triggered before fetch', async () => {
 
   expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
     {
-      "cause": [AbortError: The operation was aborted.],
+      "cause": {
+        "message": "The operation was aborted.",
+        "name": "AbortError",
+      },
       "id": "aborted",
       "message": "The operation was aborted.",
       "method": "GET",
@@ -56,7 +59,10 @@ test('should abort when AbortSignal is triggered during fetch', async () => {
 
   expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
     {
-      "cause": [AbortError: The operation was aborted.],
+      "cause": {
+        "message": "The operation was aborted.",
+        "name": "AbortError",
+      },
       "id": "aborted",
       "message": "The operation was aborted.",
       "method": "GET",
@@ -78,7 +84,10 @@ test('should timeout if the request takes longer than the specified timeout', as
 
   expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
     {
-      "cause": [AbortError: The operation was aborted.],
+      "cause": {
+        "message": "The operation was aborted.",
+        "name": "AbortError",
+      },
       "id": "aborted",
       "message": "The operation was aborted.",
       "method": "GET",
@@ -126,7 +135,10 @@ test('should prioritize abort signal over timeout if abort occurs first', async 
 
   expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
     {
-      "cause": [AbortError: The operation was aborted.],
+      "cause": {
+        "message": "The operation was aborted.",
+        "name": "AbortError",
+      },
       "id": "aborted",
       "message": "The operation was aborted.",
       "method": "GET",
@@ -155,7 +167,10 @@ test('should prioritize timeout over abort signal if timeout occurs first', asyn
 
   expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
     {
-      "cause": [AbortError: The operation was aborted.],
+      "cause": {
+        "message": "The operation was aborted.",
+        "name": "AbortError",
+      },
       "id": "aborted",
       "message": "The operation was aborted.",
       "method": "GET",
@@ -184,7 +199,10 @@ test('should handle AbortSignal already aborted when timeout is also present', a
 
   expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
     {
-      "cause": [AbortError: The operation was aborted.],
+      "cause": {
+        "message": "The operation was aborted.",
+        "name": "AbortError",
+      },
       "id": "aborted",
       "message": "The operation was aborted.",
       "method": "GET",
@@ -216,7 +234,10 @@ test('AbortSignal should not cause issues if aborted after fetch finishes', asyn
 
   expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
     {
-      "cause": [AbortError: The operation was aborted.],
+      "cause": {
+        "message": "The operation was aborted.",
+        "name": "AbortError",
+      },
       "id": "aborted",
       "message": "The operation was aborted.",
       "method": "GET",

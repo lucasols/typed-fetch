@@ -294,7 +294,10 @@ describe('error handling', () => {
     assert(!result.ok);
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
-        "cause": [Error: Failed to fetch],
+        "cause": {
+          "message": "Failed to fetch",
+          "name": "Error",
+        },
         "id": "network_or_cors_error",
         "message": "Failed to fetch",
         "method": "GET",
@@ -488,7 +491,10 @@ describe('error handling', () => {
 
     expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
       {
-        "cause": [TypeError: Invalid URL],
+        "cause": {
+          "message": "Invalid URL",
+          "name": "TypeError",
+        },
         "id": "invalid_options",
         "message": "Invalid url, path or host param: Invalid URL",
         "method": "GET",

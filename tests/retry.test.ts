@@ -216,7 +216,10 @@ test('should not retry if retry config is not provided', async () => {
 
   expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
     {
-      "cause": [TypeError: Network failure],
+      "cause": {
+        "message": "Network failure",
+        "name": "TypeError",
+      },
       "id": "network_or_cors_error",
       "message": "Network failure",
       "method": "GET",
@@ -249,7 +252,10 @@ test('should attempt only once if retry.attempts is 1', async () => {
 
   expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
     {
-      "cause": [TypeError: Network failure 2],
+      "cause": {
+        "message": "Network failure 2",
+        "name": "TypeError",
+      },
       "id": "network_or_cors_error",
       "message": "Network failure 2",
       "method": "GET",

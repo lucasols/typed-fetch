@@ -50,7 +50,10 @@ describe('TypedFetchError', () => {
 
     expect(json).toMatchInlineSnapshot(`
       {
-        "cause": [Error: Validation failed],
+        "cause": {
+          "message": "Validation failed",
+          "name": "Error",
+        },
         "errResponse": undefined,
         "headers": undefined,
         "id": "response_validation_error",
@@ -80,7 +83,7 @@ describe('TypedFetchError', () => {
 
     const json = error.toJSON();
 
-    expect(JSON.stringify(json)).toMatchInlineSnapshot(`"{"id":"network_or_cors_error","status":0,"url":"?","cause":{},"message":"Network request failed"}"`);
+    expect(JSON.stringify(json)).toMatchInlineSnapshot(`"{"id":"network_or_cors_error","status":0,"url":"?","message":"Network request failed","cause":{"name":"Error","message":"Underlying network issue"}}"`);
   });
 
   test('should handle ZodError in cause if provided', () => {
