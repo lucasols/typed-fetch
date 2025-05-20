@@ -585,12 +585,24 @@ export class TypedFetchError<E = unknown> extends Error {
     errResponse: E | undefined;
     pathParams: RequestPathParams | undefined;
     jsonPathParams: Record<string, unknown> | undefined;
-    headers: Record<string, string> | undefined;
     schemaIssues: readonly StandardSchemaV1.Issue[] | undefined;
     response: unknown;
     retryAttempt: number | undefined;
   } {
-    return { ...this, message: this.message };
+    const { headers, ...rest } = this;
+
+    const maskedHeaders: Record<string, string> = {};
+
+    for (const [key, value] of Object.entries(headers ?? {})) {
+      maskedHeaders[key] = this.maskHeaderValue(value);
+    }
+
+    return { ...rest, message: this.message, headers: maskedHeaders };
+  }
+
+  private maskHeaderValue(value: string): string {
+    const visible = Math.min(4, Math.ceil(value.length / 2));
+    return value.slice(0, visible) + '*'.repeat(value.length - visible);
   }
 }
 
