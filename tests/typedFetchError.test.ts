@@ -52,7 +52,6 @@ describe('TypedFetchError', () => {
       {
         "cause": [Error: Validation failed],
         "errResponse": undefined,
-        "formData": undefined,
         "headers": undefined,
         "id": "response_validation_error",
         "jsonPathParams": undefined,
@@ -97,5 +96,27 @@ describe('TypedFetchError', () => {
 
     expect(error.cause).toBe(zodError);
     expect(error.message).toBe('Zod validation failed');
+  });
+
+  test('should mask headers in toJSON', () => {
+    const error = new TypedFetchError({
+      id: 'response_validation_error',
+      message: 'Zod validation failed',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer 1234567890',
+        'X-API-Key': '123',
+      },
+    });
+
+    const json = error.toJSON();
+
+    expect(json.headers).toMatchInlineSnapshot(`
+      {
+        "Authorization": "Bear*************",
+        "Content-Type": "appl************",
+        "X-API-Key": "12*",
+      }
+    `);
   });
 });

@@ -31,6 +31,7 @@ test('should abort when AbortSignal is triggered before fetch', async () => {
       "cause": [AbortError: The operation was aborted.],
       "id": "aborted",
       "message": "The operation was aborted.",
+      "method": "GET",
       "status": 0,
       "url": "http://test.com/api",
     }
@@ -58,6 +59,7 @@ test('should abort when AbortSignal is triggered during fetch', async () => {
       "cause": [AbortError: The operation was aborted.],
       "id": "aborted",
       "message": "The operation was aborted.",
+      "method": "GET",
       "status": 0,
       "url": "http://test.com/api",
     }
@@ -79,6 +81,7 @@ test('should timeout if the request takes longer than the specified timeout', as
       "cause": [AbortError: The operation was aborted.],
       "id": "aborted",
       "message": "The operation was aborted.",
+      "method": "GET",
       "status": 0,
       "url": "http://test.com/api",
     }
@@ -126,6 +129,7 @@ test('should prioritize abort signal over timeout if abort occurs first', async 
       "cause": [AbortError: The operation was aborted.],
       "id": "aborted",
       "message": "The operation was aborted.",
+      "method": "GET",
       "status": 0,
       "url": "http://test.com/api",
     }
@@ -154,6 +158,7 @@ test('should prioritize timeout over abort signal if timeout occurs first', asyn
       "cause": [AbortError: The operation was aborted.],
       "id": "aborted",
       "message": "The operation was aborted.",
+      "method": "GET",
       "status": 0,
       "url": "http://test.com/api",
     }
@@ -182,6 +187,7 @@ test('should handle AbortSignal already aborted when timeout is also present', a
       "cause": [AbortError: The operation was aborted.],
       "id": "aborted",
       "message": "The operation was aborted.",
+      "method": "GET",
       "status": 0,
       "url": "http://test.com/api",
     }
@@ -213,6 +219,7 @@ test('AbortSignal should not cause issues if aborted after fetch finishes', asyn
       "cause": [AbortError: The operation was aborted.],
       "id": "aborted",
       "message": "The operation was aborted.",
+      "method": "GET",
       "status": 0,
       "url": "http://test.com/api",
     }

@@ -581,6 +581,7 @@ export class TypedFetchError<E = unknown> extends Error {
   toJSON(): {
     id: TypedFetchError['id'];
     message: string;
+    headers: Record<string, string> | undefined;
     status: number;
     payload: RequestPayload | undefined;
     method: HttpMethod | undefined;

@@ -94,6 +94,7 @@ test('should return the last error if all retry attempts fail', async () => {
     {
       "id": "request_error",
       "message": "Gateway Timeout",
+      "method": "GET",
       "response": {
         "error": "Retry 3 failed",
       },
@@ -126,6 +127,7 @@ test('should not retry if retry.condition returns false', async () => {
     {
       "id": "request_error",
       "message": "Bad Request",
+      "method": "GET",
       "response": {
         "error": "Critical error",
       },
@@ -217,6 +219,7 @@ test('should not retry if retry config is not provided', async () => {
       "cause": [TypeError: Network failure],
       "id": "network_or_cors_error",
       "message": "Network failure",
+      "method": "GET",
       "status": 0,
       "url": "http://test.com/api",
     }
@@ -249,6 +252,7 @@ test('should attempt only once if retry.attempts is 1', async () => {
       "cause": [TypeError: Network failure 2],
       "id": "network_or_cors_error",
       "message": "Network failure 2",
+      "method": "GET",
       "retryAttempt": 1,
       "status": 0,
       "url": "http://test.com/api",
@@ -348,6 +352,7 @@ test('retry condition can prevent retry even if attempts remain', async () => {
     {
       "id": "request_error",
       "message": "Internal Server Error",
+      "method": "GET",
       "response": {
         "detail": "server error",
       },

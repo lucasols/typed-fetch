@@ -240,6 +240,7 @@ describe('error handling', () => {
       {
         "id": "invalid_options",
         "message": "Path "/leading/slash" should not start or end with /",
+        "method": "GET",
         "status": 0,
         "url": "http://test.com/leading/slash",
       }
@@ -256,6 +257,7 @@ describe('error handling', () => {
       {
         "id": "invalid_options",
         "message": "Path "trailing/slash/" should not start or end with /",
+        "method": "GET",
         "status": 0,
         "url": "http://test.com/trailing/slash/",
       }
@@ -272,6 +274,7 @@ describe('error handling', () => {
       {
         "id": "invalid_options",
         "message": "Path "double//slash" should not contain //",
+        "method": "GET",
         "status": 0,
         "url": "http://test.com/double//slash",
       }
@@ -294,6 +297,7 @@ describe('error handling', () => {
         "cause": [Error: Failed to fetch],
         "id": "network_or_cors_error",
         "message": "Failed to fetch",
+        "method": "GET",
         "status": 0,
         "url": "http://fail.com/network/error",
       }
@@ -316,6 +320,7 @@ describe('error handling', () => {
       {
         "id": "request_error",
         "message": "Not Found",
+        "method": "GET",
         "response": {
           "error": "NF",
         },
@@ -340,6 +345,7 @@ describe('error handling', () => {
       {
         "id": "invalid_json",
         "message": "Unexpected token 'T', "This is not JSON" is not valid JSON",
+        "method": "GET",
         "response": "This is not JSON",
         "status": 400,
         "url": "http://test.com/invalid/json",
@@ -368,6 +374,7 @@ describe('error handling', () => {
         "id": "response_validation_error",
         "message": "$.age: Expected number, received string
       $.id.[2]: Expected number, received string",
+        "method": "GET",
         "response": {
           "age": "twenty",
           "id": [
@@ -429,6 +436,7 @@ describe('error handling', () => {
       {
         "id": "invalid_options",
         "message": "Payload or multiPart is not allowed for GET or DELETE requests",
+        "method": "DELETE",
         "payload": {
           "name": "Test Item",
         },
@@ -460,6 +468,7 @@ describe('error handling', () => {
         },
         "id": "request_error",
         "message": "NF",
+        "method": "GET",
         "response": {
           "error": "NF",
         },
@@ -482,6 +491,7 @@ describe('error handling', () => {
         "cause": [TypeError: Invalid URL],
         "id": "invalid_options",
         "message": "Invalid url, path or host param: Invalid URL",
+        "method": "GET",
         "status": 0,
         "url": "___/invalid-url",
       }
@@ -502,6 +512,7 @@ describe('error handling', () => {
       {
         "id": "invalid_options",
         "message": "Full url passed as string and host param should not be used together",
+        "method": "GET",
         "status": 0,
         "url": "http://test.com/test",
       }

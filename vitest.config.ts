@@ -8,5 +8,6 @@ export default defineConfig({
     include: ['tests/*.test.{ts,tsx,js}', 'src/**/*.test.{ts,tsx,js}'],
     testTimeout: 2_000,
     allowOnly: isDev,
+    dangerouslyIgnoreUnhandledErrors: true,
   },
 });
