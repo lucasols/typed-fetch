@@ -591,7 +591,7 @@ export class TypedFetchError<E = unknown> extends Error {
     response: unknown;
     retryAttempt: number | undefined;
   } {
-    const { headers, ...rest } = this;
+    const { headers, formData, ...rest } = this;
 
     const maskedHeaders: Record<string, string> = {};
 
