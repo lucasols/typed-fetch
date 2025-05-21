@@ -309,7 +309,7 @@ export async function typedFetch<R = unknown, E = unknown>(
   let abortSignal: AbortSignal | undefined = signal;
 
   if (timeoutMs) {
-    const timeoutSignal = createTimeoutSignal(timeoutMs);
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
 
     abortSignal =
       abortSignal ?
@@ -770,22 +770,3 @@ const defaultFetcher: TypedFetchFetcher = async (url, options) => {
     ok: response.ok,
   };
 };
-
-class TimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'TimeoutError';
-  }
-}
-
-function createTimeoutSignal(timeoutMs: number): AbortSignal {
-  const controller = new AbortController();
-
-  setTimeout(() => {
-    controller.abort(
-      new TimeoutError(`Fetch exceeded timeout of ${timeoutMs}ms`),
-    );
-  }, timeoutMs);
-
-  return controller.signal;
-}
