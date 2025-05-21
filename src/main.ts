@@ -780,12 +780,10 @@ class TimeoutError extends Error {
 
 function createTimeoutSignal(timeoutMs: number): AbortSignal {
   const controller = new AbortController();
-  setTimeout(
-    () =>
-      controller.abort(
-        new TimeoutError(`Fetch exceeded timeout of ${timeoutMs}ms`),
-      ),
-    timeoutMs,
-  );
+  setTimeout(() => {
+    controller.abort(
+      new TimeoutError(`Fetch exceeded timeout of ${timeoutMs}ms`),
+    );
+  }, timeoutMs);
   return controller.signal;
 }
