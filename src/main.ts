@@ -27,6 +27,21 @@ export type RequestFormDataPayload = Record<
   string | File | File[] | RequestPayload | undefined
 >;
 
+export type TypedFetchFetcher = (
+  url: URL,
+  options: {
+    headers: Record<string, string>;
+    method: HttpMethod;
+    body: FormData | string | undefined;
+    signal: AbortSignal | undefined;
+  },
+) => Promise<{
+  getText: () => Promise<string>;
+  status: number;
+  statusText: string;
+  ok: boolean;
+}>;
+
 const originalMaxRetries: unique symbol = Symbol('originalAttempts');
 
 type RetryContext<E> = {
@@ -108,6 +123,10 @@ type ApiCallParams<R = unknown, E = unknown> = {
     condition?: (context: RetryContext<E>) => boolean;
     onRetry?: (context: RetryContext<E>) => void;
   };
+  /**
+   * Fetcher, the fetch implementation to use, it will use `fetch` by default
+   */
+  fetcher?: TypedFetchFetcher;
 };
 
 export async function typedFetch<R = unknown, E = unknown>(
@@ -130,6 +149,7 @@ export async function typedFetch<R = unknown, E = unknown>(
     timeoutMs,
     signal,
     retry,
+    fetcher = defaultFetcher,
   } = options;
 
   const startTimestamp = retry || enableLogs ? Date.now() : undefined;
@@ -239,7 +259,7 @@ export async function typedFetch<R = unknown, E = unknown>(
   }
 
   const finalHeaders = { ...headers };
-  let body: BodyInit | undefined;
+  let body: FormData | string | undefined;
 
   if (formData instanceof FormData) {
     body = formData;
@@ -289,7 +309,7 @@ export async function typedFetch<R = unknown, E = unknown>(
   let abortSignal: AbortSignal | undefined = signal;
 
   if (timeoutMs) {
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const timeoutSignal = createTimeoutSignal(timeoutMs);
 
     abortSignal =
       abortSignal ?
@@ -298,7 +318,7 @@ export async function typedFetch<R = unknown, E = unknown>(
   }
 
   const response = await resultify(() =>
-    fetch(url, {
+    fetcher(url, {
       headers: finalHeaders,
       method,
       body,
@@ -329,7 +349,7 @@ export async function typedFetch<R = unknown, E = unknown>(
     );
   }
 
-  const responseJSON = await resultify(() => response.value.text());
+  const responseJSON = await resultify(() => response.value.getText());
 
   if (!responseJSON.ok) {
     return errorResult(
@@ -738,4 +758,34 @@ export function standardResultValidate<I, O = I>(
   }
 
   return Result.ok(result.value);
+}
+
+const defaultFetcher: TypedFetchFetcher = async (url, options) => {
+  const response = await fetch(url, options);
+
+  return {
+    getText: () => response.text(),
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+  };
+};
+
+class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TimeoutError';
+  }
+}
+
+function createTimeoutSignal(timeoutMs: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(
+    () =>
+      controller.abort(
+        new TimeoutError(`Fetch exceeded timeout of ${timeoutMs}ms`),
+      ),
+    timeoutMs,
+  );
+  return controller.signal;
 }
