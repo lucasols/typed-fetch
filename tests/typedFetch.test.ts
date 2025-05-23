@@ -40,6 +40,10 @@ test('should make a successful GET request and parse the response', async () => 
 
   assert(result.ok);
 
+  typingTest.expectType<
+    TestTypeIsEqual<typeof result.value, { message: string }>
+  >();
+
   expect(result.value).toMatchInlineSnapshot(`
     {
       "message": "Data fetched",
@@ -73,6 +77,10 @@ test('should make a successful POST request with payload and parse the response'
   `);
 
   assert(result.ok);
+
+  typingTest.expectType<
+    TestTypeIsEqual<typeof result.value, { id: number; name: string }>
+  >();
 
   expect(result.value).toEqual({ id: 1, name: 'Test Item' });
 });
