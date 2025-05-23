@@ -5,5 +5,5 @@
     "noEmit": false,
     "isolatedDeclarations": true
   },
-  "include": ["src/main.ts"]
+  "include": ["src/main.ts", "src/nodeLogger.ts"]
 }
