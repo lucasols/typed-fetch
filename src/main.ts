@@ -118,6 +118,7 @@ type ApiCallParams<R = unknown, E = unknown> = {
    */
   retry?: {
     maxRetries: number;
+    /** @internal */
     [originalMaxRetries]?: number;
     delayMs: number | ((attempt: number) => number);
     condition?: (context: RetryContext<E>) => boolean;
