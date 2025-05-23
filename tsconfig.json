@@ -12,7 +12,6 @@
     "strictNullChecks": true,
     "noImplicitReturns": true,
     "noImplicitAny": true,
-    "composite": true,
     "alwaysStrict": true,
     "erasableSyntaxOnly": true,
     "strict": true,

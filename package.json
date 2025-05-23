@@ -11,7 +11,7 @@
     "eslint": "eslint src/",
     "test:ui": "vitest --ui",
     "build": "pnpm test && pnpm lint && pnpm run build:no-test",
-    "build:no-test": "tsup --dts",
+    "build:no-test": "tsup",
     "pre-publish": "./scripts/check-if-is-sync.sh && pnpm build",
     "npm-publish": "pnpm publish --access=public"
   },
