@@ -128,6 +128,12 @@ type ApiCallParams<R = unknown, E = unknown> = {
    * Fetcher, the fetch implementation to use, it will use `fetch` by default
    */
   fetcher?: TypedFetchFetcher;
+  /**
+   * Whether to parse the response as JSON
+   *
+   * @default true
+   */
+  jsonResponse?: boolean;
 };
 
 export async function typedFetch<R = unknown, E = unknown>(
@@ -149,6 +155,7 @@ export async function typedFetch<R = unknown, E = unknown>(
     formData,
     timeoutMs,
     signal,
+    jsonResponse = true,
     retry,
     fetcher = defaultFetcher,
   } = options;
