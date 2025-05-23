@@ -26,6 +26,7 @@ yarn add @ls-stack/typed-fetch
 
 ```typescript
 import { typedFetch, TypedFetchError } from '@ls-stack/typed-fetch';
+import { getNodeLogger } from '@ls-stack/typed-fetch/nodeLogger';
 import { z } from 'zod';
 
 const UserSchema = z.object({
@@ -41,7 +42,7 @@ async function getUser(userId: number): Promise<User | null> {
     host: 'https://api.example.com',
     method: 'GET',
     responseSchema: UserSchema, // Validate the response
-    enableLogs: true, // Optional: Enable logging
+    logger: getNodeLogger(), // Optional: Use the built-in Node.js logger or provide your own
   });
 
   if (result.ok) {
@@ -49,7 +50,7 @@ async function getUser(userId: number): Promise<User | null> {
     return result.value;
   } else {
     // Handle different error types
-    const error: TypedFetchError = result.error;
+    const error = result.error;
     console.error(`Failed to fetch user: ${error.id} - ${error.message}`);
     if (error.id === 'response_validation_error') {
       console.error('Validation Issues:', error.schemaIssues);
@@ -70,8 +71,8 @@ Makes an HTTP request with type validation and structured error handling.
 
 **Overloads:**
 
-1.  `typedFetch<R, E>(path: URL, options: ApiCallParams<R, E>): Promise<Result<R, TypedFetchError<E>>>`
-2.  `typedFetch<R, E>(path: string, options: ApiCallParams<R, E> & { host: string }): Promise<Result<R, TypedFetchError<E>>>`
+1. `typedFetch(path: string | URL, options: ApiCallParams & { jsonResponse: false }): Promise<Result<string, TypedFetchError<string>>>`
+2. `typedFetch<R, E>(path: string | URL, options: ApiCallParams<E> & { jsonResponse?: true; responseSchema?: StandardSchemaV1<R>; errorResponseSchema?: StandardSchemaV1<E>; getMessageFromRequestError?: (errorResponse: E) => string; }): Promise<Result<R, TypedFetchError<E>>>`
 
 **Parameters:**
 
@@ -83,11 +84,11 @@ Makes an HTTP request with type validation and structured error handling.
   - `pathParams` (`Record<string, string | number | boolean | string[] | number[] | undefined>`, optional): Key-value pairs to be added as URL query parameters.
   - `jsonPathParams` (`Record<string, unknown>`, optional): Key-value pairs where values are JSON-stringified before being added as query parameters.
   - `headers` (`Record<string, string>`, optional): Custom request headers.
-  - `multiPart` (`Record<string, string | File | File[] | RequestPayload | undefined>`, optional): Data for `multipart/form-data` requests. Cannot be used with `payload`. The `Content-Type` header is set automatically by the browser. JSON objects within multipart data will be stringified.
-  - `responseSchema` (`z.ZodType<R>`, optional): A Standard Schema to validate the successful response body. If provided, the `Ok` result value will be typed as `R`.
-  - `errorResponseSchema` (`z.ZodType<E>`, optional): A Standard Schema to validate the error response body when the request fails (e.g., 4xx, 5xx status). If provided and validation succeeds, the `errResponse` property of `TypedFetchError` will be typed as `E`.
+  - `formData` (`Record<string, string | File | File[] | RequestPayload | undefined> | FormData`, optional): Data for `multipart/form-data` requests. Cannot be used with `payload`. The `Content-Type` header is set automatically by the browser. JSON objects within form data will be stringified.
+  - `responseSchema` (`StandardSchemaV1<R>`, optional): A Standard Schema to validate the successful response body. If provided, the `Ok` result value will be typed as `R`.
+  - `errorResponseSchema` (`StandardSchemaV1<E>`, optional): A Standard Schema to validate the error response body when the request fails (e.g., 4xx, 5xx status). If provided and validation succeeds, the `errResponse` property of `TypedFetchError` will be typed as `E`.
   - `getMessageFromRequestError` (`(errorResponse: E) => string`, optional): A function to extract a user-friendly error message from the parsed error response (`errResponse`). Used when `errorResponseSchema` is provided and validation passes.
-  - `enableLogs` (`boolean | LogOptions`, optional): Enable console logging for the request/response lifecycle. Can be `true` or an object with `indent`, `hostAlias`, or `logFn`.
+  - `jsonResponse` (`boolean`, optional): Whether to parse response as JSON. Defaults to `true`. When `false`, the response will be returned as a string.
   - `disablePathValidation` (`boolean`, optional): Disable the validation that prevents paths starting/ending with `/`.
   - `timeoutMs` (`number`, optional): Specifies the timeout for the request in milliseconds. If the request takes longer than `timeoutMs`, it will be aborted and result in a `TypedFetchError` with `id: 'timeout'`.
   - `signal` (`AbortSignal`, optional): An `AbortSignal` to allow aborting the request externally. If the request is aborted, it will result in a `TypedFetchError` with `id: 'aborted'`.
@@ -96,6 +97,9 @@ Makes an HTTP request with type validation and structured error handling.
     - `delayMs` (`number | ((attempt: number) => number)`): The delay in milliseconds before the next retry. Can be a fixed number or a function that takes the current retry attempt number (1-indexed) and returns the delay.
     - `condition` (`(context: RetryContext<E>) => boolean`, optional): A function that receives a context object (`{ error: TypedFetchError<E>, retryAttempt: number, errorDuration: number }`) and returns `true` if the request should be retried, or `false` otherwise. Defaults to retrying on all retryable errors. Errors with `id: 'invalid_options'` or `'aborted'` are never retried.
     - `onRetry` (`(context: RetryContext<E>) => void`, optional): A function called before a retry attempt. Receives the same context as `condition`.
+  - `fetcher` (`TypedFetchFetcher`, optional): Custom fetch implementation. Defaults to the global `fetch` function.
+  - `responseIsValid` (`(response: { headers: Headers; url: string }) => Error | true`, optional): A function to validate the response before processing. Should return `true` if valid, or an `Error` if invalid.
+  - `logger` (`TypedFetchLogger`, optional): Custom logger function for request/response lifecycle logging.
 
 **Returns:**
 
@@ -109,16 +113,17 @@ Custom error class returned in the `Err` variant of the `Result`.
 
 **Properties:**
 
-- `id` (`'invalid_url' | 'invalid_path' | 'network_or_cors_error' | 'request_error' | 'invalid_json' | 'response_validation_error' | 'invalid_payload' | 'timeout' | 'aborted'`): A unique identifier for the type of error.
+- `id` (`'invalid_options' | 'aborted' | 'network_or_cors_error' | 'request_error' | 'invalid_json' | 'response_validation_error' | 'timeout' | 'invalid_response'`): A unique identifier for the type of error.
 - `message` (`string`): A description of the error.
 - `status` (`number`): The HTTP status code of the response (0 if the request didn't receive a response, e.g., network error).
 - `errResponse` (`E | undefined`): The parsed error response body, validated against `errorResponseSchema` if provided.
 - `response` (`unknown`): The raw, unparsed response body (if available).
-- `schemaIssues` (`StandardSchemaV1.Issue[] | undefined`): An array of validation issues if `id` is `'response_validation_error'`. Each issue object contains details about the validation failure, such as the path to the invalid field and an error message. (Requires `responseSchema` or `errorResponseSchema` to be provided for the respective validation).
+- `schemaIssues` (`readonly StandardSchemaV1.Issue[] | undefined`): An array of validation issues if `id` is `'response_validation_error'`. Each issue object contains details about the validation failure, such as the path to the invalid field and an error message. (Requires `responseSchema` or `errorResponseSchema` to be provided for the respective validation).
 - `cause` (`unknown`): The underlying error object that caused this error (e.g., from `fetch` or `JSON.parse`).
 - `payload`, `pathParams`, `jsonPathParams`, `headers`, `method`: Copies of the request parameters for debugging.
 - `url` (`string`): The URL that was requested.
-- `multiPart` (`Record<string, string | File | File[] | RequestPayload | undefined> | undefined`): A copy of the multipart payload used in the request, if any.
+- `formData` (`Record<string, string | File | File[] | RequestPayload | undefined> | FormData | undefined`): A copy of the form data payload used in the request, if any.
+- `retryAttempt` (`number | undefined`): The retry attempt number if this error occurred during a retry (1-indexed).
 
 ## Examples
 
@@ -143,10 +148,11 @@ async function createUser(name: string, email: string) {
     responseSchema: CreatedUserSchema,
   });
 
-  result.match(
-    (user) => console.log('User created:', user),
-    (error) => console.error('Failed to create user:', error.id, error.message),
-  );
+  result
+    .onOk((user) => console.log('User created:', user))
+    .onErr((error) =>
+      console.error('Failed to create user:', error.id, error.message),
+    );
 }
 ```
 
@@ -182,7 +188,7 @@ async function searchItems(query: string, limit?: number, tags?: string[]) {
 }
 ```
 
-### Request with Multipart Form Data
+### Request with Form Data
 
 ```typescript
 import { typedFetch } from '@ls-stack/typed-fetch';
@@ -196,7 +202,7 @@ async function uploadFile(file: File, metadata: { description: string }) {
     {
       host: 'https://api.example.com',
       method: 'POST',
-      multiPart: {
+      formData: {
         file: file, // The actual File object
         metadata: metadata, // JSON object, will be stringified
         otherField: 'some value',
@@ -205,6 +211,26 @@ async function uploadFile(file: File, metadata: { description: string }) {
     },
   );
   // ... handle result ...
+}
+```
+
+### Request with String Response
+
+```typescript
+import { typedFetch } from '@ls-stack/typed-fetch';
+
+async function downloadTextFile() {
+  const result = await typedFetch('/download/readme.txt', {
+    host: 'https://api.example.com',
+    method: 'GET',
+    jsonResponse: false, // Return response as string instead of parsing JSON
+  });
+
+  if (result.ok) {
+    console.log('File content:', result.value); // string
+  } else {
+    console.error('Download failed:', result.error.message);
+  }
 }
 ```
 
@@ -274,7 +300,7 @@ async function getProductWithRetries(productId: string) {
           );
         },
       },
-      enableLogs: { hostAlias: 'ProductAPI' },
+      logger: customLogger,
     },
   );
 
@@ -290,25 +316,54 @@ async function getProductWithRetries(productId: string) {
 
 ### Custom Logging
 
+For Node.js environments, use the built-in `getNodeLogger` utility for styled console output:
+
+```typescript
+import { typedFetch } from '@ls-stack/typed-fetch';
+import { getNodeLogger } from '@ls-stack/typed-fetch/nodeLogger';
+
+// Use the built-in Node.js logger with styling and formatting
+const nodeLogger = getNodeLogger({
+  indent: 2, // Indent logs by 2 spaces
+  hostAlias: 'MyAPI', // Show "MyAPI" instead of the full host URL
+});
+
+async function fetchDataWithNodeLogger() {
+  await typedFetch('/data', {
+    host: 'https://api.example.com',
+    method: 'GET',
+    logger: nodeLogger,
+  });
+}
+```
+
+For custom logging implementations:
+
 ```typescript
 import { typedFetch, TypedFetchLogger } from '@ls-stack/typed-fetch';
 
-const customLogger: TypedFetchLogger = (logText, logInfo) => {
-  // Send logs to your preferred logging service
-  console.log(
-    `[${logInfo.logId}] ${logInfo.method} ${logInfo.url.pathname} - ${logText}`,
-  );
+const customLogger: TypedFetchLogger = (logId, url, method, startTimestamp) => {
+  return {
+    success: () => {
+      const duration = Date.now() - startTimestamp;
+      console.log(
+        `[${logId}] ${method} ${url.pathname} - Success (${duration}ms)`,
+      );
+    },
+    error: (status) => {
+      const duration = Date.now() - startTimestamp;
+      console.log(
+        `[${logId}] ${method} ${url.pathname} - Error: ${status} (${duration}ms)`,
+      );
+    },
+  };
 };
 
 async function fetchDataWithCustomLog() {
   await typedFetch('/data', {
     host: 'https://api.example.com',
     method: 'GET',
-    enableLogs: {
-      logFn: customLogger,
-      indent: 2,
-      hostAlias: 'MyAPI',
-    },
+    logger: customLogger,
   });
 }
 ```
