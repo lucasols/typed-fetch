@@ -2,8 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "noEmit": false,
-    "isolatedDeclarations": true
+    "noEmit": false
   },
   "include": ["src/main.ts", "src/nodeLogger.ts"]
 }
