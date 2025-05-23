@@ -2,20 +2,12 @@ import { cachedGetter } from '@ls-stack/utils/cache';
 import { safeJsonStringify } from '@ls-stack/utils/safeJson';
 import { type __LEGIT_ANY__ } from '@ls-stack/utils/saferTyping';
 import { sleep } from '@ls-stack/utils/sleep';
-import { concatStrings } from '@ls-stack/utils/stringUtils';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { styleText } from 'node:util';
 import { Result, resultify } from 't-result';
 
 let devLogId = 0;
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-
-type LogOptions = {
-  indent?: number;
-  hostAlias?: string;
-  logFn?: TypedFetchLogger;
-};
 
 export type RequestPayload = Record<string, unknown> | unknown[];
 export type RequestPathParams = Record<
@@ -40,6 +32,10 @@ export type TypedFetchFetcher = (
   status: number;
   statusText: string;
   ok: boolean;
+  response: {
+    headers: Headers;
+    url: string;
+  };
 }>;
 
 const originalMaxRetries: unique symbol = Symbol('originalAttempts');
@@ -86,10 +82,6 @@ type ApiCallParams<E = unknown> = {
    */
   formData?: RequestFormDataPayload | FormData;
   /**
-   * Enable logging of the request and response
-   */
-  enableLogs?: boolean | LogOptions;
-  /**
    * Disable path validation
    */
   disablePathValidation?: boolean;
@@ -116,12 +108,11 @@ type ApiCallParams<E = unknown> = {
    * Fetcher, the fetch implementation to use, it will use `fetch` by default
    */
   fetcher?: TypedFetchFetcher;
-  /**
-   * Whether to parse the response as JSON
-   *
-   * @default true
-   */
-  jsonResponse?: boolean;
+  responseIsValid?: (response: {
+    headers: Headers;
+    url: string;
+  }) => Error | true;
+  logger?: TypedFetchLogger;
 };
 
 export async function typedFetch(
@@ -163,7 +154,6 @@ export async function typedFetch(
     pathParams,
     headers,
     jsonPathParams,
-    enableLogs,
     disablePathValidation,
     errorResponseSchema,
     getMessageFromRequestError,
@@ -173,9 +163,11 @@ export async function typedFetch(
     jsonResponse = true,
     retry,
     fetcher = defaultFetcher,
+    responseIsValid,
+    logger,
   } = options;
 
-  const startTimestamp = retry || enableLogs ? Date.now() : undefined;
+  const startTimestamp = retry || logger ? Date.now() : undefined;
 
   const urlResult = resultify(() =>
     typeof pathOrUrl === 'string' ? new URL(pathOrUrl, host) : pathOrUrl,
@@ -196,15 +188,7 @@ export async function typedFetch(
   const url = urlResult.value;
 
   const logEnd =
-    enableLogs ?
-      logCall(
-        ++devLogId,
-        url,
-        method,
-        startTimestamp ?? 0,
-        enableLogs === true ? undefined : enableLogs,
-      )
-    : undefined;
+    logger ? logger(++devLogId, url, method, startTimestamp ?? 0) : undefined;
 
   if (!disablePathValidation && typeof pathOrUrl === 'string') {
     if (pathOrUrl.startsWith('/') || pathOrUrl.endsWith('/')) {
@@ -393,6 +377,30 @@ export async function typedFetch(
         status: response.value.status,
       }),
     );
+  }
+
+  if (responseIsValid) {
+    const assertResult = resultify(() =>
+      responseIsValid({
+        headers: response.value.response.headers,
+        url: response.value.response.url,
+      }),
+    );
+
+    const isValid =
+      assertResult.error ? assertResult.error : assertResult.value;
+
+    if (isValid !== true) {
+      return errorResult(
+        new TypedFetchError({
+          id: 'invalid_response',
+          cause: isValid,
+          message: isValid.message,
+          status: response.value.status,
+          response: responseText.value,
+        }),
+      );
+    }
   }
 
   if (!jsonResponse) {
@@ -585,7 +593,8 @@ export class TypedFetchError<E = unknown> extends Error {
     | 'request_error'
     | 'invalid_json'
     | 'response_validation_error'
-    | 'timeout';
+    | 'timeout'
+    | 'invalid_response';
   readonly status: number;
   readonly payload: RequestPayload | undefined;
   readonly errResponse: E | undefined;
@@ -698,63 +707,14 @@ function maskHeaderValue(value: string): string {
 }
 
 export type TypedFetchLogger = (
-  logText: string,
-  logInfo: {
-    startTimestamp: number;
-    errorStatus: number | string;
-    logId: number;
-    method: string;
-    url: URL;
-  },
-) => void;
-
-const defaultLogFn: TypedFetchLogger = (logText) => {
-  console.info(logText);
-};
-
-function logCall(
   logId: number,
   url: URL,
   method: string,
   startTimestamp: number,
-  { indent = 0, hostAlias, logFn = defaultLogFn }: LogOptions = {},
-) {
-  function log(timestamp = 0, errorStatus: number | string = 0) {
-    const logText = concatStrings(
-      ' '.repeat(indent),
-      !timestamp ?
-        `${String(logId)}>>`
-      : styleText(
-          'bold',
-          styleText(!errorStatus ? 'green' : 'red', `<<${String(logId)}`),
-        ),
-      ` api_call:${styleText('bold', method)} ${styleText(
-        'gray',
-        hostAlias ?? url.host,
-      )}${url.pathname}`,
-      !!errorStatus && styleText('red', ` ${errorStatus} `),
-      !!timestamp && [
-        ' ',
-        styleText('gray', readableDuration(Date.now() - timestamp)),
-      ],
-    );
-
-    logFn(logText, {
-      startTimestamp: timestamp,
-      errorStatus,
-      logId,
-      method,
-      url,
-    });
-  }
-
-  log();
-
-  return {
-    success: () => log(startTimestamp),
-    error: (status: string | number) => log(startTimestamp, status),
-  };
-}
+) => {
+  success: () => void;
+  error: (status: string | number) => void;
+};
 
 export function readableDuration(durationMs: number): string {
   if (durationMs < 1000) return `${durationMs}ms`;
@@ -820,5 +780,9 @@ const defaultFetcher: TypedFetchFetcher = async (url, options) => {
     status: response.status,
     statusText: response.statusText,
     ok: response.ok,
+    response: {
+      headers: response.headers,
+      url: response.url,
+    },
   };
 };

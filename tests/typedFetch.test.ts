@@ -647,3 +647,77 @@ describe('jsonResponse: false', () => {
     expect(result.value).toBe('');
   });
 });
+
+describe('assertResponse', () => {
+  test('should return an error if assertResponse returns an error', async () => {
+    fetchMock.get('http://localhost:3000/response', {
+      body: { ok: true },
+    });
+
+    const result = await typedFetch('response', {
+      method: 'GET',
+      jsonResponse: false,
+      host: 'http://localhost:3000',
+      responseIsValid: ({ headers }) => {
+        if (headers.get('Content-Type') !== 'text/html') {
+          return new Error('Invalid content type');
+        }
+
+        return true;
+      },
+    });
+
+    assert(!result.ok);
+
+    expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
+      {
+        "cause": {
+          "message": "Invalid content type",
+          "name": "Error",
+        },
+        "id": "invalid_response",
+        "message": "Invalid content type",
+        "method": "GET",
+        "response": "{"ok":true}",
+        "status": 200,
+        "url": "http://localhost:3000/response",
+      }
+    `);
+  });
+
+  test('should return an error if assertResponse throws an error', async () => {
+    fetchMock.get('http://localhost:3000/response', {
+      body: { ok: true },
+    });
+
+    const result = await typedFetch('response', {
+      method: 'GET',
+      jsonResponse: false,
+      host: 'http://localhost:3000',
+      responseIsValid: ({ headers }) => {
+        if (headers.get('Content-Type') !== 'text/html') {
+          throw new Error('Invalid content type');
+        }
+
+        return true;
+      },
+    });
+
+    assert(!result.ok);
+
+    expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
+      {
+        "cause": {
+          "message": "Invalid content type",
+          "name": "Error",
+        },
+        "id": "invalid_response",
+        "message": "Invalid content type",
+        "method": "GET",
+        "response": "{"ok":true}",
+        "status": 200,
+        "url": "http://localhost:3000/response",
+      }
+    `);
+  });
+});

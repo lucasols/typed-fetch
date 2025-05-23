@@ -8,11 +8,8 @@ import {
   vi,
 } from 'vitest';
 import { z } from 'zod';
-import {
-  readableDuration,
-  typedFetch,
-  type TypedFetchLogger,
-} from '../src/main';
+import { readableDuration, typedFetch } from '../src/main';
+import { getNodeLogger } from '../src/nodeLogger';
 
 // Mock the global fetch function
 global.fetch = vi.fn();
@@ -61,7 +58,7 @@ describe('Logger Tests', () => {
     dateNowMock.mockRestore();
   });
 
-  test('should not log when enableLogs is false or undefined', async () => {
+  test('should not log when logger is undefined', async () => {
     await typedFetch('test/path', {
       method: 'GET',
       host: 'http://localhost:3000',
@@ -71,7 +68,6 @@ describe('Logger Tests', () => {
     await typedFetch('test/path2', {
       method: 'GET',
       host: 'http://localhost:3000',
-      enableLogs: false,
     });
     expect(consoleMock).not.toHaveBeenCalled();
   });
@@ -80,7 +76,7 @@ describe('Logger Tests', () => {
     await typedFetch('test/path', {
       method: 'GET',
       host: 'http://localhost:3000',
-      enableLogs: true,
+      logger: getNodeLogger(),
     });
 
     expect(consoleMock).toHaveBeenCalledTimes(2);
@@ -98,7 +94,7 @@ describe('Logger Tests', () => {
     await typedFetch('test/path', {
       method: 'POST',
       host: 'http://api.example.com',
-      enableLogs: { indent: 2, hostAlias: 'MyAPI' },
+      logger: getNodeLogger({ indent: 2, hostAlias: 'MyAPI' }),
     });
 
     expect(consoleMock).toHaveBeenCalledTimes(2);
@@ -111,47 +107,6 @@ describe('Logger Tests', () => {
     );
   });
 
-  test('should use custom logFn when provided', async () => {
-    // Correct type: Provide the full function type T
-    const customLogFn = vi.fn<TypedFetchLogger>();
-
-    await typedFetch('custom/log', {
-      method: 'PUT',
-      host: 'http://localhost:3000',
-      enableLogs: { logFn: customLogFn as any },
-    });
-
-    expect(consoleMock).not.toHaveBeenCalled();
-    expect(customLogFn).toHaveBeenCalledTimes(2);
-
-    // Check args of the first call (start log)
-    const firstCallArgs = customLogFn.mock.calls[0];
-    expect(firstCallArgs?.[0]).toMatchInlineSnapshot(
-      `"3>> api_call:PUT localhost:3000/custom/log"`,
-    );
-    expect(firstCallArgs?.[1]).toMatchObject({
-      startTimestamp: 0,
-      errorStatus: 0,
-      logId: 3, // Incremented from previous tests
-      method: 'PUT',
-      url: new URL('http://localhost:3000/custom/log'),
-    });
-
-    // Check args of the second call (end log)
-    const secondCallArgs = customLogFn.mock.calls[1];
-    expect(secondCallArgs?.[0]).toMatchInlineSnapshot(
-      `"<<3 api_call:PUT localhost:3000/custom/log 500ms"`,
-    );
-    expect(secondCallArgs?.[0]).toContain('500ms');
-    expect(secondCallArgs?.[1]).toMatchObject({
-      startTimestamp: 1000, // From Date.now mock
-      errorStatus: 0,
-      logId: 3,
-      method: 'PUT',
-      url: new URL('http://localhost:3000/custom/log'),
-    });
-  });
-
   test('should log error status correctly', async () => {
     mockFetch.mockImplementation(() =>
       errorResponse({ error: 'Bad Request' }, 400),
@@ -160,7 +115,7 @@ describe('Logger Tests', () => {
     const result = await typedFetch('error/path', {
       method: 'GET',
       host: 'http://testerror.com',
-      enableLogs: true,
+      logger: getNodeLogger(),
     });
 
     assert(!result.ok);
@@ -168,10 +123,10 @@ describe('Logger Tests', () => {
     expect(consoleMock).toHaveBeenCalledTimes(2);
     const errorCalls = consoleMock.mock.calls;
     expect(errorCalls[0]?.[0]).toMatchInlineSnapshot(
-      `"4>> api_call:GET testerror.com/error/path"`,
+      `"3>> api_call:GET testerror.com/error/path"`,
     );
     expect(errorCalls[1]?.[0]).toMatchInlineSnapshot(
-      `"<<4 api_call:GET testerror.com/error/path 400  500ms"`,
+      `"<<3 api_call:GET testerror.com/error/path 400  500ms"`,
     );
     expect(errorCalls[1]?.[0]).toContain('500ms');
   });
@@ -184,7 +139,7 @@ describe('Logger Tests', () => {
       method: 'GET',
       host: 'http://testerror.com',
       responseSchema: z.object({ expected: z.string() }), // This will fail validation
-      enableLogs: true,
+      logger: getNodeLogger(),
     });
 
     assert(!result.ok);
@@ -194,10 +149,10 @@ describe('Logger Tests', () => {
     expect(consoleMock).toHaveBeenCalledTimes(2);
     const validationErrorCalls = consoleMock.mock.calls;
     expect(validationErrorCalls[0]?.[0]).toMatchInlineSnapshot(
-      `"5>> api_call:GET testerror.com/validation/error"`,
+      `"4>> api_call:GET testerror.com/validation/error"`,
     );
     expect(validationErrorCalls[1]?.[0]).toMatchInlineSnapshot(
-      `"<<5 api_call:GET testerror.com/validation/error response_validation_error(200)  500ms"`,
+      `"<<4 api_call:GET testerror.com/validation/error response_validation_error(200)  500ms"`,
     );
   });
 });
