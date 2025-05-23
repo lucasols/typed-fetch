@@ -78,9 +78,9 @@ test('should make a successful POST request with payload and parse the response'
 
   assert(result.ok);
 
-  typingTest.expectType<
-    TestTypeIsEqual<typeof result.value, { id: number; name: string }>
-  >();
+  typingTest.expectTypesAre<typeof result.value, { id: number; name: string }>(
+    'equal',
+  );
 
   expect(result.value).toEqual({ id: 1, name: 'Test Item' });
 });
