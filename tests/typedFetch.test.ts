@@ -1,8 +1,12 @@
 import { omit } from '@ls-stack/utils/objUtils';
+import {
+  type TestTypeIsEqual,
+  typingTest,
+} from '@ls-stack/utils/typingTestUtils';
 import fetchMock from 'fetch-mock';
 import { afterEach, assert, beforeEach, describe, expect, test } from 'vitest';
 import { z } from 'zod';
-import { typedFetch } from '../src/main';
+import { typedFetch, type TypedFetchError } from '../src/main';
 import { getErrorObj, getErrorObjFromResult, getLastCall } from './utils';
 
 beforeEach(() => {
@@ -523,5 +527,115 @@ describe('error handling', () => {
         "url": "http://test.com/test",
       }
     `);
+  });
+
+  test('should still handle non-2xx status codes with jsonResponse false', async () => {
+    fetchMock.get('http://localhost:3000/error-text', {
+      status: 404,
+      body: 'Page not found',
+    });
+
+    const result = await typedFetch('error-text', {
+      method: 'GET',
+      host: 'http://localhost:3000',
+      jsonResponse: false,
+    });
+
+    assert(!result.ok);
+
+    typingTest.expectType<
+      TestTypeIsEqual<typeof result.error, TypedFetchError<string>>
+    >();
+
+    expect(getErrorObj(result.error)).toMatchObject({
+      id: 'request_error',
+      status: 404,
+      response: 'Page not found',
+    });
+  });
+});
+
+describe('jsonResponse: false', () => {
+  test('should return raw text response when jsonResponse is false', async () => {
+    fetchMock.get('http://localhost:3000/text', {
+      body: 'This is plain text response',
+      headers: { 'Content-Type': 'text/plain' },
+    });
+
+    const result = await typedFetch('text', {
+      method: 'GET',
+      host: 'http://localhost:3000',
+      jsonResponse: false,
+    });
+
+    assert(result.ok);
+
+    typingTest.expectType<TestTypeIsEqual<typeof result.value, string>>();
+
+    expect(result.value).toBe('This is plain text response');
+  });
+
+  test('should return raw HTML response when jsonResponse is false', async () => {
+    const htmlContent = '<html><body><h1>Hello World</h1></body></html>';
+    fetchMock.get('http://localhost:3000/html', {
+      body: htmlContent,
+      headers: { 'Content-Type': 'text/html' },
+    });
+
+    const result = await typedFetch('html', {
+      method: 'GET',
+      host: 'http://localhost:3000',
+      jsonResponse: false,
+    });
+
+    assert(result.ok);
+    expect(result.value).toBe(htmlContent);
+  });
+
+  test('should return raw response even with invalid JSON when jsonResponse is false', async () => {
+    const invalidJson = '{ invalid json content }';
+    fetchMock.get('http://localhost:3000/invalid-json', {
+      body: invalidJson,
+    });
+
+    const result = await typedFetch('invalid-json', {
+      method: 'GET',
+      host: 'http://localhost:3000',
+      jsonResponse: false,
+    });
+
+    assert(result.ok);
+    expect(result.value).toBe(invalidJson);
+  });
+
+  test('should handle POST request with jsonResponse false', async () => {
+    fetchMock.post('http://localhost:3000/submit', {
+      body: 'Success: Data received',
+    });
+
+    const result = await typedFetch('submit', {
+      method: 'POST',
+      host: 'http://localhost:3000',
+      payload: { data: 'test' },
+      jsonResponse: false,
+    });
+
+    assert(result.ok);
+    expect(result.value).toBe('Success: Data received');
+  });
+
+  test('should handle empty response when jsonResponse is false', async () => {
+    fetchMock.get('http://localhost:3000/empty', {
+      body: '',
+    });
+
+    const result = await typedFetch('empty', {
+      method: 'GET',
+      host: 'http://localhost:3000',
+      jsonResponse: false,
+    });
+
+    assert(result.ok);
+    expect(result.value).toBe('');
   });
 });

@@ -1,6 +1,6 @@
 import { cachedGetter } from '@ls-stack/utils/cache';
 import { safeJsonStringify } from '@ls-stack/utils/safeJson';
-import { __LEGIT_CAST__ } from '@ls-stack/utils/saferTyping';
+import { type __LEGIT_ANY__ } from '@ls-stack/utils/saferTyping';
 import { sleep } from '@ls-stack/utils/sleep';
 import { concatStrings } from '@ls-stack/utils/stringUtils';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -56,11 +56,11 @@ type RetryContext<E> = {
   errorDuration: number;
 };
 
-type ApiCallParams<R = unknown, E = unknown> = {
+type ApiCallParams<E = unknown> = {
   /**
    * The method to use for the request
    */
-  method: HttpMethod;
+  method?: HttpMethod;
   /**
    * The host to use for the request
    */
@@ -86,10 +86,6 @@ type ApiCallParams<R = unknown, E = unknown> = {
    */
   formData?: RequestFormDataPayload | FormData;
   /**
-   * The schema to validate the response against
-   */
-  responseSchema?: StandardSchemaV1<R>;
-  /**
    * Enable logging of the request and response
    */
   enableLogs?: boolean | LogOptions;
@@ -97,14 +93,6 @@ type ApiCallParams<R = unknown, E = unknown> = {
    * Disable path validation
    */
   disablePathValidation?: boolean;
-  /**
-   * The schema to validate the error response against
-   */
-  errorResponseSchema?: StandardSchemaV1<E>;
-  /**
-   * A function to get the message from the error response
-   */
-  getMessageFromRequestError?: (errorResponse: E) => string;
   /**
    * The timeout in milliseconds
    */
@@ -136,14 +124,41 @@ type ApiCallParams<R = unknown, E = unknown> = {
   jsonResponse?: boolean;
 };
 
+export async function typedFetch(
+  pathOrUrl: string | URL,
+  options: ApiCallParams<string> & { jsonResponse: false },
+): Promise<Result<string, TypedFetchError<string>>>;
 export async function typedFetch<R = unknown, E = unknown>(
   pathOrUrl: string | URL,
-  options: ApiCallParams<R, E> & { host?: string },
-): Promise<Result<R, TypedFetchError<E>>> {
+  options: ApiCallParams<NoInfer<E>> & {
+    jsonResponse?: true;
+    /**
+     * The schema to validate the response against
+     */
+    responseSchema?: StandardSchemaV1<R>;
+    /**
+     * The schema to validate the error response against
+     */
+    errorResponseSchema?: StandardSchemaV1<E>;
+    /**
+     * A function to get the message from the error response
+     */
+    getMessageFromRequestError?: (errorResponse: E) => string;
+  },
+): Promise<Result<R, TypedFetchError<E>>>;
+export async function typedFetch(
+  pathOrUrl: string | URL,
+  options: ApiCallParams<__LEGIT_ANY__> & {
+    jsonResponse?: boolean;
+    responseSchema?: StandardSchemaV1<unknown>;
+    errorResponseSchema?: StandardSchemaV1<unknown>;
+    getMessageFromRequestError?: (errorResponse: unknown) => string;
+  },
+): Promise<Result<unknown, TypedFetchError<unknown>>> {
   const {
     payload,
     responseSchema,
-    method,
+    method = 'GET',
     host,
     pathParams,
     headers,
@@ -235,6 +250,16 @@ export async function typedFetch<R = unknown, E = unknown>(
         id: 'invalid_options',
         message:
           'Payload or multiPart is not allowed for GET or DELETE requests',
+      }),
+    );
+  }
+
+  if (jsonResponse === false && errorResponseSchema) {
+    return errorResult(
+      new TypedFetchError({
+        id: 'invalid_options',
+        message:
+          'errorResponseSchema is not allowed when jsonResponse is false',
       }),
     );
   }
@@ -357,30 +382,46 @@ export async function typedFetch<R = unknown, E = unknown>(
     );
   }
 
-  const responseJSON = await resultify(() => response.value.getText());
+  const responseText = await resultify(() => response.value.getText());
 
-  if (!responseJSON.ok) {
+  if (!responseText.ok) {
     return errorResult(
       new TypedFetchError({
         id: 'invalid_json',
-        cause: responseJSON.error.cause,
-        message: responseJSON.error.message,
+        cause: responseText.error.cause,
+        message: responseText.error.message,
         status: response.value.status,
       }),
     );
   }
 
+  if (!jsonResponse) {
+    if (!response.value.ok) {
+      return errorResult(
+        new TypedFetchError({
+          id: 'request_error',
+          message: response.value.statusText,
+          status: response.value.status,
+          response: responseText.value,
+        }),
+      );
+    }
+
+    logEnd?.success();
+    return Result.ok(responseText.value);
+  }
+
   const parsedResponse = resultify(
-    () => JSON.parse(responseJSON.value) as unknown,
+    () => JSON.parse(responseText.value) as unknown,
   );
 
   if (!parsedResponse.ok) {
     return errorResult(
-      new TypedFetchError<E>({
+      new TypedFetchError<unknown>({
         id: 'invalid_json',
         cause: parsedResponse.error.cause,
         message: parsedResponse.error.message,
-        response: responseJSON.value,
+        response: responseText.value,
         status: 400,
       }),
     );
@@ -394,7 +435,7 @@ export async function typedFetch<R = unknown, E = unknown>(
 
     if (errorResponse && !errorResponse.ok) {
       return errorResult(
-        new TypedFetchError<E>({
+        new TypedFetchError<unknown>({
           id: 'response_validation_error',
           status: response.value.status,
           response: parsedResponse.value,
@@ -420,7 +461,7 @@ export async function typedFetch<R = unknown, E = unknown>(
   if (!responseSchema) {
     logEnd?.success();
 
-    return Result.ok(__LEGIT_CAST__<R>(parsedResponse.value));
+    return Result.ok(parsedResponse.value);
   }
 
   const validResponse = standardResultValidate(
@@ -430,7 +471,7 @@ export async function typedFetch<R = unknown, E = unknown>(
 
   if (!validResponse.ok) {
     return errorResult(
-      new TypedFetchError<E>({
+      new TypedFetchError<unknown>({
         id: 'response_validation_error',
         errResponse:
           errorResponseSchema ?
@@ -465,7 +506,7 @@ export async function typedFetch<R = unknown, E = unknown>(
 
   return Result.ok(validResponse.value);
 
-  async function errorResult(error: TypedFetchError<E>) {
+  async function errorResult(error: TypedFetchError<unknown>) {
     logEnd?.error(
       error.id === 'request_error' ? error.status
       : error.status ? `${error.id}(${error.status})`
@@ -476,7 +517,7 @@ export async function typedFetch<R = unknown, E = unknown>(
 
     const retryAttempt = maxAttempts - (retry?.maxRetries ?? 0) + 1;
 
-    const newError = new TypedFetchError<E>({
+    const newError = new TypedFetchError<unknown>({
       ...error,
       message: error.message,
       status: error.status || 0,
@@ -519,14 +560,17 @@ export async function typedFetch<R = unknown, E = unknown>(
         errorDuration: errorDuration.value,
       });
 
-      return typedFetch(pathOrUrl, {
+      const newOptions: typeof options = {
         ...options,
         retry: {
           ...retry,
           [originalMaxRetries]: maxAttempts,
           maxRetries: retry.maxRetries - 1,
         },
-      });
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      return typedFetch(pathOrUrl, newOptions as any);
     }
 
     return Result.err(newError);
