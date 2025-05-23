@@ -26,6 +26,10 @@
     ".": {
       "import": "./dist/main.mjs",
       "require": "./dist/main.js"
+    },
+    "./nodeLogger": {
+      "import": "./dist/nodeLogger.mjs",
+      "require": "./dist/nodeLogger.js"
     }
   },
   "engines": {
