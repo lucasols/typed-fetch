@@ -650,7 +650,7 @@ export class TypedFetchError<E = unknown> extends Error {
     this.method = method;
     this.pathParams = pathParams;
     this.jsonPathParams = jsonPathParams;
-    this.headers = headers;
+    this.headers = getMaskedHeaders(headers);
     this.schemaIssues = schemaIssues;
     this.cause = cause;
     this.response = response;
@@ -673,15 +673,7 @@ export class TypedFetchError<E = unknown> extends Error {
     response: unknown;
     retryAttempt: number | undefined;
   } {
-    const { headers, formData, cause, ...rest } = this;
-
-    const maskedHeaders: Record<string, string> = {};
-    let hasHeaders = false;
-
-    for (const [key, value] of Object.entries(headers ?? {})) {
-      maskedHeaders[key] = maskHeaderValue(value);
-      hasHeaders = true;
-    }
+    const { formData, cause, ...rest } = this;
 
     let causeToLog = cause;
 
@@ -695,10 +687,25 @@ export class TypedFetchError<E = unknown> extends Error {
     return {
       ...rest,
       message: this.message,
-      headers: hasHeaders ? maskedHeaders : undefined,
       cause: causeToLog,
     };
   }
+}
+
+function getMaskedHeaders(
+  headers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!headers) return undefined;
+
+  const maskedHeaders: Record<string, string> = {};
+  let hasHeaders = false;
+
+  for (const [key, value] of Object.entries(headers)) {
+    maskedHeaders[key] = maskHeaderValue(value);
+    hasHeaders = true;
+  }
+
+  return hasHeaders ? maskedHeaders : undefined;
 }
 
 function maskHeaderValue(value: string): string {
