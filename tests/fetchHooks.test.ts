@@ -497,8 +497,12 @@ describe('multiple hooks interaction', () => {
     expect(result.ok).toBe(false);
   });
 
-  test('should not call onError when onResponse throws', async () => {
+  test('should not call onError when onResponse throws, only console.error', async () => {
     const hookCalls: string[] = [];
+
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
 
     const onRequestSpy = vi.fn(() => hookCalls.push('onRequest'));
     const onResponseSpy = vi.fn(() => {
@@ -520,6 +524,8 @@ describe('multiple hooks interaction', () => {
     expect(hookCalls).toEqual(['onRequest', 'onResponse']);
     expect(onErrorSpy).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.any(Error));
+    consoleErrorSpy.mockRestore();
   });
 });
 
