@@ -436,7 +436,7 @@ export async function typedFetch(
     if (!onRequestResult.ok) {
       return errorResult(
         new TypedFetchError({
-          id: 'hook_cb_error',
+          id: 'on_request_error',
           cause: onRequestResult.error,
           message: onRequestResult.error.message,
         }),
@@ -732,7 +732,7 @@ export class TypedFetchError<E = unknown> extends Error {
     | 'aborted'
     | 'network_or_cors_error'
     | 'request_error'
-    | 'hook_cb_error'
+    | 'on_request_error'
     | 'invalid_json'
     | 'response_validation_error'
     | 'timeout'

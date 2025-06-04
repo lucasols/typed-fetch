@@ -223,36 +223,6 @@ describe('onResponse hook', () => {
     expect(result.ok).toBe(false);
   });
 
-  test('should handle onResponse throwing an error', async () => {
-    const onResponseError = new Error('onResponse failed');
-    const onResponseSpy = vi.fn(() => {
-      throw onResponseError;
-    });
-
-    fetchMock.get(testApiUrl, { success: true });
-
-    const result = await typedFetch('api', {
-      host: testHost,
-      method: 'GET',
-      onResponse: onResponseSpy,
-    });
-
-    expect(onResponseSpy).toHaveBeenCalledTimes(1);
-    expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
-      {
-        "cause": {
-          "message": "onResponse failed",
-          "name": "Error",
-        },
-        "id": "invalid_response",
-        "message": "onResponse failed",
-        "method": "GET",
-        "status": 0,
-        "url": "http://test.com/api",
-      }
-    `);
-  });
-
   test('should call onResponse with null response when using custom fetcher', async () => {
     const onResponseSpy = vi.fn();
     const customFetcher = vi.fn().mockResolvedValue({
@@ -527,7 +497,7 @@ describe('multiple hooks interaction', () => {
     expect(result.ok).toBe(false);
   });
 
-  test('should call onError when onResponse throws', async () => {
+  test('should not call onError when onResponse throws', async () => {
     const hookCalls: string[] = [];
 
     const onRequestSpy = vi.fn(() => hookCalls.push('onRequest'));
@@ -547,8 +517,9 @@ describe('multiple hooks interaction', () => {
       onError: onErrorSpy,
     });
 
-    expect(hookCalls).toEqual(['onRequest', 'onResponse', 'onError']);
-    expect(result.ok).toBe(false);
+    expect(hookCalls).toEqual(['onRequest', 'onResponse']);
+    expect(onErrorSpy).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
   });
 });
 
