@@ -146,6 +146,7 @@ type ApiCallParams<E = unknown> = {
     url: URL,
     fetchOptions: RequestOptions,
     options: GenericApiCallParams,
+    retryAttempt: number,
   ) => void;
   /**
    * A function to be called when the response is received, it will be called
@@ -155,14 +156,16 @@ type ApiCallParams<E = unknown> = {
     response: Response | null,
     fetchOptions: RequestOptions,
     options: GenericApiCallParams,
+    retryAttempt: number,
   ) => void;
   /**
-   * A function to be called when the request fails
+   * A function to be called when some error occurs
    */
   onError?: (
     error: TypedFetchError,
     fetchOptions: RequestOptions,
     options: GenericApiCallParams,
+    retryAttempt: number,
   ) => void;
 };
 
@@ -225,6 +228,10 @@ export async function typedFetch(
   } = options;
 
   const startTimestamp = retry || logger ? Date.now() : undefined;
+
+  const maxAttempts = retry?.[originalMaxRetries] ?? retry?.maxRetries ?? 0;
+
+  const retryAttempt = maxAttempts - (retry?.maxRetries ?? 0);
 
   const urlResult = resultify(() =>
     typeof pathOrUrl === 'string' ? new URL(pathOrUrl, host) : pathOrUrl,
@@ -414,7 +421,7 @@ export async function typedFetch(
 
   if (onRequest) {
     const onRequestResult = resultify(() =>
-      onRequest(url, fetchOptions, options),
+      onRequest(url, fetchOptions, options, retryAttempt),
     );
 
     if (!onRequestResult.ok) {
@@ -500,7 +507,12 @@ export async function typedFetch(
 
   if (onResponse) {
     const onResponseResult = resultify(() =>
-      onResponse(response.value.response.instance, fetchOptions, options),
+      onResponse(
+        response.value.response.instance,
+        fetchOptions,
+        options,
+        retryAttempt,
+      ),
     );
 
     if (!onResponseResult.ok) {
@@ -632,9 +644,7 @@ export async function typedFetch(
       : error.id,
     );
 
-    const maxAttempts = retry?.[originalMaxRetries] ?? retry?.maxRetries ?? 0;
-
-    const retryAttempt = maxAttempts - (retry?.maxRetries ?? 0) + 1;
+    const nextRetryAttempt = retryAttempt + 1;
 
     const newError = new TypedFetchError<unknown>({
       ...error,
@@ -643,7 +653,9 @@ export async function typedFetch(
       errResponse: error.errResponse,
       ...getGenericErrorPayload(url),
       retryAttempt:
-        maxAttempts === 0 || retryAttempt === 1 ? undefined : retryAttempt - 1,
+        maxAttempts === 0 || nextRetryAttempt === 1 ?
+          undefined
+        : nextRetryAttempt - 1,
     });
 
     newError.stack = error.stack;
@@ -661,21 +673,21 @@ export async function typedFetch(
       canRetryErrorId &&
       (retry.condition?.({
         error,
-        retryAttempt,
+        retryAttempt: nextRetryAttempt,
         errorDuration: errorDuration.value,
       }) ??
         true)
     ) {
       const delay =
         typeof retry.delayMs === 'function' ?
-          retry.delayMs(retryAttempt)
+          retry.delayMs(nextRetryAttempt)
         : retry.delayMs;
 
       await sleep(delay);
 
       retry.onRetry?.({
         error,
-        retryAttempt,
+        retryAttempt: nextRetryAttempt,
         errorDuration: errorDuration.value,
       });
 
@@ -693,7 +705,7 @@ export async function typedFetch(
     }
 
     if (onError) {
-      onError(newError, fetchOptions, options);
+      onError(newError, fetchOptions, options, retryAttempt);
     }
 
     return Result.err(newError);

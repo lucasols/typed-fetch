@@ -8,6 +8,10 @@ process.on('uncaughtException', () => {
   // ignore
 });
 
+process.on('unhandledRejection', () => {
+  // ignore
+});
+
 beforeEach(() => {
   fetchMock.mockGlobal();
 });
