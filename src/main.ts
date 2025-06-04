@@ -38,6 +38,10 @@ export type TypedFetchFetcher = (
   };
 }>;
 
+type LogOptions = {
+  hostAlias?: string;
+};
+
 const originalMaxRetries: unique symbol = Symbol('originalAttempts');
 
 type RetryContext<E> = {
@@ -113,6 +117,7 @@ type ApiCallParams<E = unknown> = {
     url: string;
   }) => Error | true;
   logger?: TypedFetchLogger;
+  logOptions?: LogOptions;
 };
 
 export async function typedFetch(
@@ -165,6 +170,7 @@ export async function typedFetch(
     fetcher = defaultFetcher,
     responseIsValid,
     logger,
+    logOptions,
   } = options;
 
   const startTimestamp = retry || logger ? Date.now() : undefined;
@@ -188,7 +194,9 @@ export async function typedFetch(
   const url = urlResult.value;
 
   const logEnd =
-    logger ? logger(++devLogId, url, method, startTimestamp ?? 0) : undefined;
+    logger ?
+      logger(++devLogId, url, method, startTimestamp ?? 0, logOptions)
+    : undefined;
 
   if (!disablePathValidation && typeof pathOrUrl === 'string') {
     if (pathOrUrl.startsWith('/') || pathOrUrl.endsWith('/')) {
@@ -727,6 +735,7 @@ export type TypedFetchLogger = (
   url: URL,
   method: string,
   startTimestamp: number,
+  logOptions: LogOptions | undefined,
 ) => {
   success: () => void;
   error: (status: string | number) => void;

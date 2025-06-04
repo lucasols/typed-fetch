@@ -11,7 +11,7 @@ export function getNodeLogger({
   indent = 0,
   hostAlias,
 }: LogOptions = {}): TypedFetchLogger {
-  return (logId, url, method, startTimestamp) => {
+  return (logId, url, method, startTimestamp, logOptions) => {
     function log(timestamp = 0, errorStatus: number | string = 0) {
       const logText = concatStrings(
         ' '.repeat(indent),
@@ -23,7 +23,7 @@ export function getNodeLogger({
           ),
         ` api_call:${styleText('bold', method)} ${styleText(
           'gray',
-          hostAlias ?? url.host,
+          hostAlias ?? logOptions?.hostAlias ?? url.host,
         )}${url.pathname}`,
         !!errorStatus && styleText('red', ` ${errorStatus} `),
         !!timestamp && [
