@@ -705,7 +705,16 @@ export async function typedFetch(
     }
 
     if (onError) {
-      onError(newError, fetchOptions, options, retryAttempt);
+      const onErrorResult = resultify(() =>
+        onError(newError, fetchOptions, options, retryAttempt),
+      );
+
+      if (!onErrorResult.ok) {
+        console.error(
+          'onError callback returned an error',
+          onErrorResult.error,
+        );
+      }
     }
 
     return Result.err(newError);
