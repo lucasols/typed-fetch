@@ -120,6 +120,15 @@ type ApiCallParams<E = unknown> = {
     maxRetries: number;
     /** @internal */
     [originalMaxRetries]?: number;
+    /**
+     * The error ids to retry on
+     *
+     * @default ['request_error', 'network_or_cors_error']
+     */
+    retryOnErrIds?: TypedFetchError['id'][];
+    /**
+     * The delay between retries
+     */
     delayMs: number | ((attempt: number) => number);
     condition?: (context: RetryContext<E>) => boolean;
     onRetry?: (context: RetryContext<E>) => void;
@@ -427,7 +436,7 @@ export async function typedFetch(
     if (!onRequestResult.ok) {
       return errorResult(
         new TypedFetchError({
-          id: 'on_request_error',
+          id: 'hook_cb_error',
           cause: onRequestResult.error,
           message: onRequestResult.error.message,
         }),
@@ -516,13 +525,7 @@ export async function typedFetch(
     );
 
     if (!onResponseResult.ok) {
-      return errorResult(
-        new TypedFetchError({
-          id: 'invalid_response',
-          cause: onResponseResult.error,
-          message: onResponseResult.error.message,
-        }),
-      );
+      console.error(onResponseResult.error);
     }
   }
 
@@ -660,8 +663,7 @@ export async function typedFetch(
 
     newError.stack = error.stack;
 
-    const canRetryErrorId =
-      error.id !== 'invalid_options' && error.id !== 'aborted';
+    const canRetryErrorId = getCanRetryErrorId(error.id, retry?.retryOnErrIds);
 
     const errorDuration = cachedGetter(
       () => Date.now() - (startTimestamp ?? 0),
@@ -685,11 +687,17 @@ export async function typedFetch(
 
       await sleep(delay);
 
-      retry.onRetry?.({
-        error,
-        retryAttempt: nextRetryAttempt,
-        errorDuration: errorDuration.value,
-      });
+      const onRetryResult = resultify(() =>
+        retry.onRetry?.({
+          error,
+          retryAttempt: nextRetryAttempt,
+          errorDuration: errorDuration.value,
+        }),
+      );
+
+      if (!onRetryResult.ok) {
+        console.error(onRetryResult.error);
+      }
 
       const newOptions: typeof options = {
         ...options,
@@ -710,10 +718,7 @@ export async function typedFetch(
       );
 
       if (!onErrorResult.ok) {
-        console.error(
-          'onError callback returned an error',
-          onErrorResult.error,
-        );
+        console.error(onErrorResult.error);
       }
     }
 
@@ -727,7 +732,7 @@ export class TypedFetchError<E = unknown> extends Error {
     | 'aborted'
     | 'network_or_cors_error'
     | 'request_error'
-    | 'on_request_error'
+    | 'hook_cb_error'
     | 'invalid_json'
     | 'response_validation_error'
     | 'timeout'
@@ -854,6 +859,16 @@ function getMaskedHeaders(
   }
 
   return hasHeaders ? maskedHeaders : undefined;
+}
+
+function getCanRetryErrorId(
+  errorId: TypedFetchError['id'],
+  retryOnErrIds: TypedFetchError['id'][] = [
+    'request_error',
+    'network_or_cors_error',
+  ],
+): boolean {
+  return retryOnErrIds.includes(errorId);
 }
 
 function maskHeaderValue(value: string): string {
