@@ -1,0 +1,262 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+# Test Writing Guide
+
+This guide covers the patterns and conventions for writing test files in this TypeScript project using Vitest.
+
+## Test Framework & Setup
+
+This project uses **Vitest** as the testing framework with the following configuration:
+
+- Test files should match the pattern: `tests/*.test.{ts,tsx,js}` or `src/**/*.test.{ts,tsx,js}`
+- Test timeout is set to 2 seconds
+- Uses `fetch-mock` for mocking HTTP requests
+
+## Test File Structure
+
+### Imports and Setup
+
+Every test file should follow this import pattern:
+
+```typescript
+import fetchMock from 'fetch-mock';
+import {
+  afterEach,
+  assert,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from 'vitest';
+import { typedFetch, TypedFetchError } from '../src/main';
+import {
+  getErrorObj,
+  getErrorObjFromResult,
+  getSuccessValueFromResult,
+  getLastCall,
+} from './utils';
+```
+
+### Setup and Teardown
+
+Always include these hooks for fetch mocking:
+
+```typescript
+beforeEach(() => {
+  fetchMock.mockGlobal();
+});
+
+afterEach(() => {
+  fetchMock.hardReset();
+});
+```
+
+## Test Utilities
+
+Use the test utilities from [utils.ts](mdc:tests/utils.ts):
+
+- `getErrorObj(obj: TypedFetchError)` - Extract clean error object for testing
+- `getSuccessValueFromResult(result)` - Extract success value from Result type
+- `getErrorObjFromResult(result)` - Extract error object from failed Result
+- `getLastCall({ includeBody?: boolean })` - Get the last fetch call details
+
+## Testing Patterns
+
+### 1. Successful API Calls
+
+```typescript
+test('should make a successful GET request and parse the response', async () => {
+  fetchMock.get('http://localhost:3000/test/path', {
+    message: 'Data fetched',
+  });
+
+  const result = await typedFetch('test/path', {
+    method: 'GET',
+    host: 'http://localhost:3000',
+    responseSchema: z.object({ message: z.string() }),
+  });
+
+  expect(getLastCall()).toMatchInlineSnapshot(/* expected call structure */);
+
+  assert(result.ok);
+  expect(result.value).toMatchInlineSnapshot(/* expected response */);
+});
+```
+
+### 2. Error Handling Tests
+
+```typescript
+test('should handle request errors properly', async () => {
+  fetchMock.get('http://test.com/api', {
+    body: { error: 'Server error' },
+    status: 500,
+  });
+
+  const result = await typedFetch('api', {
+    host: 'http://test.com',
+    method: 'GET',
+  });
+
+  expect(
+    getErrorObjFromResult(result),
+  ).toMatchInlineSnapshot(/* expected error */);
+});
+```
+
+### 3. Type Safety Testing
+
+Use the typing utilities for type safety verification:
+
+```typescript
+import {
+  type TestTypeIsEqual,
+  typingTest,
+} from '@ls-stack/utils/typingTestUtils';
+
+// In your test:
+typingTest.expectType<
+  TestTypeIsEqual<typeof result.value, { message: string }>
+>();
+// or
+typingTest.expectTypesAre<typeof result.value, { id: number; name: string }>(
+  'equal',
+);
+```
+
+### 4. Retry Logic Testing
+
+```typescript
+test('should retry on network error and eventually succeed', async () => {
+  fetchMock
+    .getOnce(testApiUrl, { throws: new TypeError('Network failure') })
+    .getOnce(testApiUrl, { body: { data: 'success' }, status: 200 });
+
+  const result = await typedFetch(testApiUrl, {
+    method: 'GET',
+    retry: { maxRetries: 3, delayMs: 10 },
+  });
+
+  expect(getSuccessValueFromResult(result)).toEqual({ data: 'success' });
+  expect(fetchMock.callHistory.calls().length).toBe(2);
+});
+```
+
+### 5. Timing-Sensitive Tests
+
+For tests involving delays or timeouts:
+
+```typescript
+test('should respect delayMs between retries', async () => {
+  const startTime = Date.now();
+
+  // ... test logic
+
+  const duration = Date.now() - startTime;
+  expect(duration).toBeGreaterThanOrEqual(200);
+});
+```
+
+## Test Naming Conventions
+
+- Use descriptive test names that explain the behavior being tested
+- Start with "should" followed by the expected behavior
+- Examples:
+  - `should make a successful GET request and parse the response`
+  - `should handle requests without a response schema`
+  - `should retry on network error and eventually succeed`
+  - `should not retry if retry.condition returns false`
+
+## Mocking Patterns
+
+### Basic HTTP Mocking
+
+```typescript
+fetchMock.get('http://localhost:3000/test/path', { message: 'Data fetched' });
+fetchMock.post('http://api.example.com/items', { id: 1, name: 'Test Item' });
+```
+
+### Multiple Responses (for retry testing)
+
+```typescript
+fetchMock
+  .getOnce(testApiUrl, { throws: new TypeError('Network failure') })
+  .getOnce(testApiUrl, { body: { data: 'success' }, status: 200 });
+```
+
+### Error Responses
+
+```typescript
+fetchMock.get('http://test.com/api', {
+  body: { error: 'Server error' },
+  status: 500,
+});
+```
+
+## Assertion Patterns
+
+### Use Inline Snapshots
+
+Prefer `toMatchInlineSnapshot()` for complex objects to make tests self-documenting:
+
+```typescript
+expect(getLastCall()).toMatchInlineSnapshot(`
+  [
+    "http://localhost:3000/test/path",
+    {
+      "headers": {},
+      "method": "GET",
+    },
+  ]
+`);
+```
+
+### Result Type Assertions
+
+Always check if Result is ok before accessing value:
+
+```typescript
+assert(result.ok);
+expect(result.value).toEqual(expectedValue);
+
+// Or use utility functions:
+expect(getSuccessValueFromResult(result)).toEqual(expectedValue);
+expect(getErrorObjFromResult(result)).toMatchSnapshot();
+```
+
+## Common Test Scenarios to Cover
+
+When testing `typedFetch` functionality, ensure coverage of:
+
+1. **Success cases**: GET, POST, PUT, DELETE with various payloads
+2. **Error handling**: Network errors, HTTP errors, validation errors
+3. **URL construction**: Path params, JSON path params, full URLs
+4. **Headers**: Custom headers, content-type handling
+5. **Payloads**: JSON payloads, form data, multipart data
+6. **Schema validation**: Response validation, error response validation
+7. **Retry logic**: Max retries, delay patterns, retry conditions
+8. **Timeouts and aborts**: AbortSignal handling, timeout behavior
+9. **Type safety**: Proper TypeScript type inference
+
+## File Organization
+
+- Place test files in the `tests/` directory
+- Name test files with `.test.ts` extension
+- Group related functionality in the same test file
+- Use `describe` blocks for logical grouping when files get large
+- Keep test utilities in [utils.ts](mdc:tests/utils.ts)
+
+## Constants and Setup
+
+Define reusable constants at the top of test files:
+
+```typescript
+const testHost = 'http://test.com';
+const testApiUrl = `${testHost}/api`;
+```
+
+This structure ensures consistent, maintainable, and comprehensive test coverage across the project.

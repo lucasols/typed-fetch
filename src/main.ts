@@ -29,14 +29,18 @@ export type RequestFormDataPayload = Record<
   string | File | File[] | RequestPayload | undefined
 >;
 
+type RequestHeaders = Record<string, string | null>;
+
+type RequestOptions = {
+  headers: Headers;
+  method: HttpMethod;
+  body: FormData | string | undefined;
+  signal: AbortSignal | undefined;
+};
+
 export type TypedFetchFetcher = (
   url: URL,
-  options: {
-    headers: Record<string, string>;
-    method: HttpMethod;
-    body: FormData | string | undefined;
-    signal: AbortSignal | undefined;
-  },
+  options: RequestOptions,
 ) => Promise<{
   getText: () => Promise<string>;
   status: number;
@@ -45,11 +49,13 @@ export type TypedFetchFetcher = (
   response: {
     headers: Headers;
     url: string;
+    instance: Response | null;
   };
 }>;
 
 type LogOptions = {
   hostAlias?: string;
+  indent?: number;
 };
 
 const originalMaxRetries: unique symbol = Symbol('originalAttempts');
@@ -86,7 +92,7 @@ type ApiCallParams<E = unknown> = {
   /**
    * The headers to be used in the request
    */
-  headers?: Record<string, string>;
+  headers?: Record<string, string | null>;
   /**
    * The JSON path params to be used in the request url
    */
@@ -122,12 +128,49 @@ type ApiCallParams<E = unknown> = {
    * Fetcher, the fetch implementation to use, it will use `fetch` by default
    */
   fetcher?: TypedFetchFetcher;
+  /**
+   * A function to validate the fetch final response
+   */
   responseIsValid?: (response: {
     headers: Headers;
     url: string;
+    response: Response | null;
   }) => Error | true;
   logger?: TypedFetchLogger;
   logOptions?: LogOptions;
+  /**
+   * A function to be called when the request starts, fetchOptions can be mutated
+   * before the request is made
+   */
+  onRequest?: (
+    url: URL,
+    fetchOptions: RequestOptions,
+    options: GenericApiCallParams,
+  ) => void;
+  /**
+   * A function to be called when the response is received, it will be called
+   * with the response instance or null if the fetcher do not support it
+   */
+  onResponse?: (
+    response: Response | null,
+    fetchOptions: RequestOptions,
+    options: GenericApiCallParams,
+  ) => void;
+  /**
+   * A function to be called when the request fails
+   */
+  onError?: (
+    error: TypedFetchError,
+    fetchOptions: RequestOptions,
+    options: GenericApiCallParams,
+  ) => void;
+};
+
+type GenericApiCallParams<E = unknown> = ApiCallParams<E> & {
+  jsonResponse?: boolean;
+  responseSchema?: StandardSchemaV1<unknown>;
+  errorResponseSchema?: StandardSchemaV1<E>;
+  getMessageFromRequestError?: (errorResponse: E) => string;
 };
 
 export async function typedFetch(
@@ -154,12 +197,7 @@ export async function typedFetch<R = unknown, E = unknown>(
 ): Promise<Result<R, TypedFetchError<E>>>;
 export async function typedFetch(
   pathOrUrl: string | URL,
-  options: ApiCallParams<__LEGIT_ANY__> & {
-    jsonResponse?: boolean;
-    responseSchema?: StandardSchemaV1<unknown>;
-    errorResponseSchema?: StandardSchemaV1<unknown>;
-    getMessageFromRequestError?: (errorResponse: unknown) => string;
-  },
+  options: GenericApiCallParams<__LEGIT_ANY__>,
 ): Promise<Result<unknown, TypedFetchError<unknown>>> {
   const {
     payload,
@@ -181,6 +219,9 @@ export async function typedFetch(
     responseIsValid,
     logger = globalDefaults.logger,
     logOptions,
+    onRequest,
+    onResponse,
+    onError,
   } = options;
 
   const startTimestamp = retry || logger ? Date.now() : undefined;
@@ -293,7 +334,16 @@ export async function typedFetch(
     }
   }
 
-  const finalHeaders = { ...headers };
+  const finalHeaders: Headers = new Headers();
+
+  if (headers) {
+    for (const [key, value] of Object.entries(headers)) {
+      if (value !== null) {
+        finalHeaders.set(key, value);
+      }
+    }
+  }
+
   let body: FormData | string | undefined;
 
   if (formData instanceof FormData) {
@@ -332,12 +382,15 @@ export async function typedFetch(
     }
     body = formDataFromObj;
     // Let the browser set the Content-Type for multipart/form-data
-    delete finalHeaders['Content-Type'];
-    delete finalHeaders['content-type'];
+    finalHeaders.delete('Content-Type');
+    finalHeaders.delete('content-type');
   } else if (payload) {
     body = safeJsonStringify(payload) ?? undefined;
-    if (!finalHeaders['Content-Type'] && !finalHeaders['content-type']) {
-      finalHeaders['Content-Type'] = 'application/json';
+    if (
+      !finalHeaders.get('Content-Type') &&
+      !finalHeaders.get('content-type')
+    ) {
+      finalHeaders.set('Content-Type', 'application/json');
     }
   }
 
@@ -350,6 +403,29 @@ export async function typedFetch(
       abortSignal ?
         AbortSignal.any([abortSignal, timeoutSignal])
       : timeoutSignal;
+  }
+
+  const fetchOptions: RequestOptions = {
+    headers: finalHeaders,
+    method,
+    body,
+    signal: abortSignal,
+  };
+
+  if (onRequest) {
+    const onRequestResult = resultify(() =>
+      onRequest(url, fetchOptions, options),
+    );
+
+    if (!onRequestResult.ok) {
+      return errorResult(
+        new TypedFetchError({
+          id: 'on_request_error',
+          cause: onRequestResult.error,
+          message: onRequestResult.error.message,
+        }),
+      );
+    }
   }
 
   const response = await resultify(() =>
@@ -402,6 +478,7 @@ export async function typedFetch(
       responseIsValid({
         headers: response.value.response.headers,
         url: response.value.response.url,
+        response: response.value.response.instance,
       }),
     );
 
@@ -416,6 +493,22 @@ export async function typedFetch(
           message: isValid.message,
           status: response.value.status,
           response: responseText.value,
+        }),
+      );
+    }
+  }
+
+  if (onResponse) {
+    const onResponseResult = resultify(() =>
+      onResponse(response.value.response.instance, fetchOptions, options),
+    );
+
+    if (!onResponseResult.ok) {
+      return errorResult(
+        new TypedFetchError({
+          id: 'invalid_response',
+          cause: onResponseResult.error,
+          message: onResponseResult.error.message,
         }),
       );
     }
@@ -599,6 +692,10 @@ export async function typedFetch(
       return typedFetch(pathOrUrl, newOptions as any);
     }
 
+    if (onError) {
+      onError(newError, fetchOptions, options);
+    }
+
     return Result.err(newError);
   }
 }
@@ -609,6 +706,7 @@ export class TypedFetchError<E = unknown> extends Error {
     | 'aborted'
     | 'network_or_cors_error'
     | 'request_error'
+    | 'on_request_error'
     | 'invalid_json'
     | 'response_validation_error'
     | 'timeout'
@@ -624,7 +722,7 @@ export class TypedFetchError<E = unknown> extends Error {
   readonly url: string;
   readonly formData: RequestFormDataPayload | FormData | undefined;
   readonly retryAttempt: number | undefined;
-  #rawHeaders: Record<string, string> | undefined;
+  #rawHeaders: RequestHeaders | undefined;
 
   constructor({
     id,
@@ -653,7 +751,7 @@ export class TypedFetchError<E = unknown> extends Error {
     payload?: RequestPayload;
     pathParams?: RequestPathParams;
     jsonPathParams?: Record<string, unknown>;
-    headers?: Record<string, string>;
+    headers?: RequestHeaders;
     cause?: unknown;
     schemaIssues?: readonly StandardSchemaV1.Issue[];
     formData?: RequestFormDataPayload | FormData;
@@ -677,18 +775,18 @@ export class TypedFetchError<E = unknown> extends Error {
     this.retryAttempt = retryAttempt;
   }
 
-  get headers(): Record<string, string> | undefined {
+  get headers(): RequestHeaders | undefined {
     return getMaskedHeaders(this.#rawHeaders);
   }
 
-  getUnmaskedHeaders(): Record<string, string> | undefined {
+  getUnmaskedHeaders(): RequestHeaders | undefined {
     return this.#rawHeaders;
   }
 
   toJSON(): {
     id: TypedFetchError['id'];
     message: string;
-    headers: Record<string, string> | undefined;
+    headers: RequestHeaders | undefined;
     status: number;
     payload: RequestPayload | undefined;
     method: HttpMethod | undefined;
@@ -720,7 +818,7 @@ export class TypedFetchError<E = unknown> extends Error {
 }
 
 function getMaskedHeaders(
-  headers: Record<string, string> | undefined,
+  headers: RequestHeaders | undefined,
 ): Record<string, string> | undefined {
   if (!headers) return undefined;
 
@@ -728,6 +826,8 @@ function getMaskedHeaders(
   let hasHeaders = false;
 
   for (const [key, value] of Object.entries(headers)) {
+    if (value === null) continue;
+
     maskedHeaders[key] = maskHeaderValue(value);
     hasHeaders = true;
   }
@@ -818,6 +918,7 @@ const defaultFetcher: TypedFetchFetcher = async (url, options) => {
     response: {
       headers: response.headers,
       url: response.url,
+      instance: response,
     },
   };
 };

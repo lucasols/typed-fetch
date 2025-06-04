@@ -7,11 +7,11 @@ type LogOptions = {
   hostAlias?: string;
 };
 
-export function getNodeLogger({
-  indent = 0,
-  hostAlias,
-}: LogOptions = {}): TypedFetchLogger {
-  return (logId, url, method, startTimestamp, logOptions) => {
+export function getNodeLogger(options: LogOptions = {}): TypedFetchLogger {
+  return (logId, url, method, startTimestamp, fetchLogOptions) => {
+    const indent = options.indent ?? fetchLogOptions?.indent ?? 0;
+    const hostAlias = options.hostAlias ?? fetchLogOptions?.hostAlias;
+
     function log(timestamp = 0, errorStatus: number | string = 0) {
       const logText = concatStrings(
         ' '.repeat(indent),
@@ -23,7 +23,7 @@ export function getNodeLogger({
           ),
         ` api_call:${styleText('bold', method)} ${styleText(
           'gray',
-          hostAlias ?? logOptions?.hostAlias ?? url.host,
+          hostAlias ?? url.host,
         )}${url.pathname}`,
         !!errorStatus && styleText('red', ` ${errorStatus} `),
         !!timestamp && [

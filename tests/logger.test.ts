@@ -155,6 +155,24 @@ describe('Logger Tests', () => {
       `"<<4 api_call:GET testerror.com/validation/error response_validation_error(200)  500ms"`,
     );
   });
+
+  test('should use hostAlias from logOptions if provided', async () => {
+    await typedFetch('test/path', {
+      method: 'GET',
+      host: 'http://api.example.com',
+      logger: getNodeLogger(),
+      logOptions: { hostAlias: 'AliasFromOptions' },
+    });
+
+    expect(consoleMock).toHaveBeenCalledTimes(2);
+    const calls = consoleMock.mock.calls;
+    expect(calls[0]?.[0]).toMatchInlineSnapshot(
+      `"5>> api_call:GET AliasFromOptions/test/path"`,
+    );
+    expect(calls[1]?.[0]).toMatchInlineSnapshot(
+      `"<<5 api_call:GET AliasFromOptions/test/path 500ms"`,
+    );
+  });
 });
 
 describe('readableDuration', () => {

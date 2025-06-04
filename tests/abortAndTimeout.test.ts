@@ -4,6 +4,10 @@ import { afterEach, assert, beforeEach, expect, test } from 'vitest';
 import { typedFetch } from '../src/main';
 import { getErrorObjFromResult } from './utils';
 
+process.on('uncaughtException', () => {
+  // ignore
+});
+
 beforeEach(() => {
   fetchMock.mockGlobal();
 });
