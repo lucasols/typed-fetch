@@ -5,6 +5,16 @@ import { sleep } from '@ls-stack/utils/sleep';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { Result, resultify } from 't-result';
 
+type GlobalDefaults = {
+  logger?: TypedFetchLogger;
+  fetcher?: TypedFetchFetcher;
+};
+
+let globalDefaults: GlobalDefaults = {
+  logger: undefined,
+  fetcher: undefined,
+};
+
 let devLogId = 0;
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -167,9 +177,9 @@ export async function typedFetch(
     signal,
     jsonResponse = true,
     retry,
-    fetcher = defaultFetcher,
+    fetcher = globalDefaults.fetcher ?? defaultFetcher,
     responseIsValid,
-    logger,
+    logger = globalDefaults.logger,
     logOptions,
   } = options;
 
@@ -811,3 +821,7 @@ const defaultFetcher: TypedFetchFetcher = async (url, options) => {
     },
   };
 };
+
+export function setTypedFetchGlobalDefaults(defaults: Partial<GlobalDefaults>) {
+  globalDefaults = { ...globalDefaults, ...defaults };
+}
