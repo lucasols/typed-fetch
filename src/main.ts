@@ -600,13 +600,13 @@ export class TypedFetchError<E = unknown> extends Error {
   readonly errResponse: E | undefined;
   readonly pathParams: RequestPathParams | undefined;
   readonly jsonPathParams: Record<string, unknown> | undefined;
-  readonly headers: Record<string, string> | undefined;
   readonly method: HttpMethod | undefined;
   readonly schemaIssues: readonly StandardSchemaV1.Issue[] | undefined;
   readonly response: unknown;
   readonly url: string;
   readonly formData: RequestFormDataPayload | FormData | undefined;
   readonly retryAttempt: number | undefined;
+  #rawHeaders: Record<string, string> | undefined;
 
   constructor({
     id,
@@ -650,13 +650,21 @@ export class TypedFetchError<E = unknown> extends Error {
     this.method = method;
     this.pathParams = pathParams;
     this.jsonPathParams = jsonPathParams;
-    this.headers = getMaskedHeaders(headers);
+    this.#rawHeaders = headers;
     this.schemaIssues = schemaIssues;
     this.cause = cause;
     this.response = response;
     this.url = url ?? '?';
     this.formData = formData;
     this.retryAttempt = retryAttempt;
+  }
+
+  get headers(): Record<string, string> | undefined {
+    return getMaskedHeaders(this.#rawHeaders);
+  }
+
+  getUnmaskedHeaders(): Record<string, string> | undefined {
+    return this.#rawHeaders;
   }
 
   toJSON(): {
@@ -686,6 +694,7 @@ export class TypedFetchError<E = unknown> extends Error {
 
     return {
       ...rest,
+      headers: this.headers,
       message: this.message,
       cause: causeToLog,
     };

@@ -24,7 +24,9 @@ describe('TypedFetchError', () => {
     expect(error.payload).toEqual({ key: 'value' });
     expect(error.pathParams).toEqual({ id: '123' });
     expect(error.jsonPathParams).toEqual({ filter: { name: 'test' } });
-    expect(error.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(error.getUnmaskedHeaders()).toEqual({
+      'Content-Type': 'application/json',
+    });
     expect(error.errResponse).toEqual({ detail: 'Resource not found' });
     expect(error.cause).toBeInstanceOf(Error); // Check instance type instead of reference equality
     expect(error.name).toBe('Error'); // Inherited from Error class
@@ -83,7 +85,9 @@ describe('TypedFetchError', () => {
 
     const json = error.toJSON();
 
-    expect(JSON.stringify(json)).toMatchInlineSnapshot(`"{"id":"network_or_cors_error","status":0,"url":"?","message":"Network request failed","cause":{"name":"Error","message":"Underlying network issue"}}"`);
+    expect(JSON.stringify(json)).toMatchInlineSnapshot(
+      `"{"id":"network_or_cors_error","status":0,"url":"?","message":"Network request failed","cause":{"name":"Error","message":"Underlying network issue"}}"`,
+    );
   });
 
   test('should handle ZodError in cause if provided', () => {
