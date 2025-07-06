@@ -17,6 +17,8 @@ let globalDefaults: GlobalDefaults = {
 
 let devLogId = 0;
 
+export type { StandardSchemaV1 } from '@standard-schema/spec';
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 export type RequestPayload = Record<string, unknown> | unknown[];
@@ -180,8 +182,8 @@ type ApiCallParams<E = unknown> = {
 
 type GenericApiCallParams<E = unknown> = ApiCallParams<E> & {
   jsonResponse?: boolean;
-  responseSchema?: StandardSchemaV1<unknown>;
-  errorResponseSchema?: StandardSchemaV1<E>;
+  responseSchema?: AcceptedSchemas<unknown>;
+  errorResponseSchema?: AcceptedSchemas<E>;
   getMessageFromRequestError?: (errorResponse: E) => string;
 };
 
@@ -196,11 +198,11 @@ export async function typedFetch<R = unknown, E = unknown>(
     /**
      * The schema to validate the response against
      */
-    responseSchema?: StandardSchemaV1<R>;
+    responseSchema?: AcceptedSchemas<R>;
     /**
      * The schema to validate the error response against
      */
-    errorResponseSchema?: StandardSchemaV1<E>;
+    errorResponseSchema?: AcceptedSchemas<E>;
     /**
      * A function to get the message from the error response
      */
