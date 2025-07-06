@@ -182,8 +182,8 @@ type ApiCallParams<E = unknown> = {
 
 type GenericApiCallParams<E = unknown> = ApiCallParams<E> & {
   jsonResponse?: boolean;
-  responseSchema?: AcceptedSchemas<unknown>;
-  errorResponseSchema?: AcceptedSchemas<E>;
+  responseSchema?: StandardSchemaV1<unknown>;
+  errorResponseSchema?: StandardSchemaV1<E>;
   getMessageFromRequestError?: (errorResponse: E) => string;
 };
 
@@ -198,11 +198,11 @@ export async function typedFetch<R = unknown, E = unknown>(
     /**
      * The schema to validate the response against
      */
-    responseSchema?: AcceptedSchemas<R>;
+    responseSchema?: StandardSchemaV1<R>;
     /**
      * The schema to validate the error response against
      */
-    errorResponseSchema?: AcceptedSchemas<E>;
+    errorResponseSchema?: StandardSchemaV1<E>;
     /**
      * A function to get the message from the error response
      */
