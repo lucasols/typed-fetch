@@ -38,6 +38,7 @@ type RequestOptions = {
   method: HttpMethod;
   body: FormData | string | undefined;
   signal: AbortSignal | undefined;
+  credentials: RequestCredentials | undefined;
 };
 
 export type TypedFetchFetcher = (
@@ -115,6 +116,11 @@ type ApiCallParams<E = unknown> = {
    * The abort signal to use for the request
    */
   signal?: AbortSignal;
+  /**
+   * The credentials mode forwarded to the request, e.g. `'include'` to send
+   * cookies on cross-origin requests
+   */
+  credentials?: RequestCredentials;
   /**
    * The retry options
    */
@@ -227,6 +233,7 @@ export async function typedFetch(
     formData,
     timeoutMs,
     signal,
+    credentials,
     jsonResponse = true,
     retry,
     fetcher = globalDefaults.fetcher ?? defaultFetcher,
@@ -428,6 +435,7 @@ export async function typedFetch(
     method,
     body,
     signal: abortSignal,
+    credentials,
   };
 
   if (onRequest) {
@@ -446,14 +454,7 @@ export async function typedFetch(
     }
   }
 
-  const response = await resultify(() =>
-    fetcher(url, {
-      headers: finalHeaders,
-      method,
-      body,
-      signal: abortSignal,
-    }),
-  );
+  const response = await resultify(() => fetcher(url, fetchOptions));
 
   if (!response.ok) {
     const baseErrProps = {

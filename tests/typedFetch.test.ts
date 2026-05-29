@@ -216,6 +216,52 @@ test('should include headers in the request', async () => {
   `);
 });
 
+test('should forward the credentials option to the fetcher', async () => {
+  let receivedCredentials: RequestCredentials | undefined = 'omit';
+
+  const result = await typedFetch('entity', {
+    method: 'GET',
+    host: 'http://localhost:5000',
+    credentials: 'include',
+    fetcher: (_url, options) => {
+      receivedCredentials = options.credentials;
+
+      return Promise.resolve({
+        getText: () => Promise.resolve('{"success":true}'),
+        status: 200,
+        statusText: 'OK',
+        ok: true,
+        response: { headers: new Headers(), url: '', instance: null },
+      });
+    },
+  });
+
+  assert(result.ok);
+  expect(receivedCredentials).toBe('include');
+});
+
+test('should leave credentials undefined when not provided', async () => {
+  let receivedCredentials: RequestCredentials | undefined = 'include';
+
+  await typedFetch('entity', {
+    method: 'GET',
+    host: 'http://localhost:5000',
+    fetcher: (_url, options) => {
+      receivedCredentials = options.credentials;
+
+      return Promise.resolve({
+        getText: () => Promise.resolve('{"success":true}'),
+        status: 200,
+        statusText: 'OK',
+        ok: true,
+        response: { headers: new Headers(), url: '', instance: null },
+      });
+    },
+  });
+
+  expect(receivedCredentials).toBeUndefined();
+});
+
 test('handle full url as string', async () => {
   fetchMock.get('http://test.com/test', {
     body: { data: 'success' },
