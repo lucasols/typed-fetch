@@ -21,6 +21,22 @@ export type { StandardSchemaV1 } from '@standard-schema/spec';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
+/**
+ * The way the response body should be read and returned:
+ *
+ * - `json` (default): parse as JSON and validate against `responseSchema`
+ * - `text`: return the raw response body as a `string`
+ * - `arrayBuffer`: return the raw response body as an `ArrayBuffer`
+ * - `blob`: return the raw response body as a `Blob`
+ * - `bytes`: return the raw response body as a `Uint8Array`
+ */
+export type TypedFetchResponseType =
+  | 'json'
+  | 'text'
+  | 'arrayBuffer'
+  | 'blob'
+  | 'bytes';
+
 export type RequestPayload = Record<string, unknown> | unknown[];
 export type RequestPathParams = Record<
   string,
@@ -41,11 +57,23 @@ type RequestOptions = {
   credentials: RequestCredentials | undefined;
 };
 
-export type TypedFetchFetcher = (
-  url: URL,
-  options: RequestOptions,
-) => Promise<{
+export type TypedFetchFetcherResponse = {
   getText: () => Promise<string>;
+  /**
+   * Read the response body as an `ArrayBuffer`. Required to use the
+   * `arrayBuffer` response type with a custom fetcher.
+   */
+  getArrayBuffer?: () => Promise<ArrayBuffer>;
+  /**
+   * Read the response body as a `Blob`. Required to use the `blob` response
+   * type with a custom fetcher.
+   */
+  getBlob?: () => Promise<Blob>;
+  /**
+   * Read the response body as a `Uint8Array`. Required to use the `bytes`
+   * response type with a custom fetcher.
+   */
+  getBytes?: () => Promise<Uint8Array>;
   status: number;
   statusText: string;
   ok: boolean;
@@ -54,7 +82,12 @@ export type TypedFetchFetcher = (
     url: string;
     instance: Response | null;
   };
-}>;
+};
+
+export type TypedFetchFetcher = (
+  url: URL,
+  options: RequestOptions,
+) => Promise<TypedFetchFetcherResponse>;
 
 type LogOptions = {
   hostAlias?: string;
@@ -188,6 +221,7 @@ type ApiCallParams<E = unknown> = {
 
 type GenericApiCallParams<E = unknown> = ApiCallParams<E> & {
   jsonResponse?: boolean;
+  responseType?: TypedFetchResponseType;
   responseSchema?: StandardSchemaV1<unknown>;
   errorResponseSchema?: StandardSchemaV1<E>;
   getMessageFromRequestError?: (errorResponse: E) => string;
@@ -197,10 +231,27 @@ export async function typedFetch(
   pathOrUrl: string | URL,
   options: ApiCallParams<string> & { jsonResponse: false },
 ): Promise<Result<string, TypedFetchError<string>>>;
+export async function typedFetch(
+  pathOrUrl: string | URL,
+  options: ApiCallParams<string> & { responseType: 'text' },
+): Promise<Result<string, TypedFetchError<string>>>;
+export async function typedFetch(
+  pathOrUrl: string | URL,
+  options: ApiCallParams<string> & { responseType: 'arrayBuffer' },
+): Promise<Result<ArrayBuffer, TypedFetchError<string>>>;
+export async function typedFetch(
+  pathOrUrl: string | URL,
+  options: ApiCallParams<string> & { responseType: 'blob' },
+): Promise<Result<Blob, TypedFetchError<string>>>;
+export async function typedFetch(
+  pathOrUrl: string | URL,
+  options: ApiCallParams<string> & { responseType: 'bytes' },
+): Promise<Result<Uint8Array, TypedFetchError<string>>>;
 export async function typedFetch<R = unknown, E = unknown>(
   pathOrUrl: string | URL,
   options: ApiCallParams<NoInfer<E>> & {
     jsonResponse?: true;
+    responseType?: 'json';
     /**
      * The schema to validate the response against
      */
@@ -234,7 +285,8 @@ export async function typedFetch(
     timeoutMs,
     signal,
     credentials,
-    jsonResponse = true,
+    jsonResponse,
+    responseType: responseTypeOption,
     retry,
     fetcher = globalDefaults.fetcher ?? defaultFetcher,
     responseIsValid,
@@ -244,6 +296,9 @@ export async function typedFetch(
     onResponse,
     onError,
   } = options;
+
+  const responseType: TypedFetchResponseType =
+    responseTypeOption ?? (jsonResponse === false ? 'text' : 'json');
 
   const startTimestamp = retry || logger ? Date.now() : undefined;
 
@@ -322,12 +377,12 @@ export async function typedFetch(
     );
   }
 
-  if (jsonResponse === false && errorResponseSchema) {
+  if (responseType !== 'json' && errorResponseSchema) {
     return errorResult(
       new TypedFetchError({
         id: 'invalid_options',
         message:
-          'errorResponseSchema is not allowed when jsonResponse is false',
+          'errorResponseSchema is only allowed when the response type is json',
       }),
     );
   }
@@ -479,19 +534,6 @@ export async function typedFetch(
     );
   }
 
-  const responseText = await resultify(() => response.value.getText());
-
-  if (!responseText.ok) {
-    return errorResult(
-      new TypedFetchError({
-        id: 'invalid_json',
-        cause: responseText.error.cause,
-        message: responseText.error.message,
-        status: response.value.status,
-      }),
-    );
-  }
-
   if (responseIsValid) {
     const assertResult = resultify(() =>
       responseIsValid({
@@ -505,13 +547,15 @@ export async function typedFetch(
       assertResult.error ? assertResult.error : assertResult.value;
 
     if (isValid !== true) {
+      const bodyText = await readResponseText(response.value);
+
       return errorResult(
         new TypedFetchError({
           id: 'invalid_response',
           cause: isValid,
           message: isValid.message,
           status: response.value.status,
-          response: responseText.value,
+          response: bodyText.ok ? bodyText.value : undefined,
         }),
       );
     }
@@ -532,21 +576,76 @@ export async function typedFetch(
     }
   }
 
-  if (!jsonResponse) {
-    if (!response.value.ok) {
+  // Non-JSON responses (text and binary) surface the server error body as raw
+  // text so the caller still gets a meaningful `request_error`
+  if (responseType !== 'json' && !response.value.ok) {
+    const bodyText = await readResponseText(response.value);
+
+    if (!bodyText.ok) return errorResult(bodyText.error);
+
+    return errorResult(
+      new TypedFetchError({
+        id: 'request_error',
+        message: response.value.statusText,
+        status: response.value.status,
+        response: bodyText.value,
+      }),
+    );
+  }
+
+  if (
+    responseType === 'arrayBuffer' ||
+    responseType === 'blob' ||
+    responseType === 'bytes'
+  ) {
+    const getBinaryBody =
+      responseType === 'arrayBuffer' ? response.value.getArrayBuffer
+      : responseType === 'blob' ? response.value.getBlob
+      : response.value.getBytes;
+
+    if (!getBinaryBody) {
       return errorResult(
         new TypedFetchError({
-          id: 'request_error',
-          message: response.value.statusText,
+          id: 'invalid_options',
+          message: `The fetcher does not support the "${responseType}" response type`,
           status: response.value.status,
-          response: responseText.value,
+        }),
+      );
+    }
+
+    const binaryBody = await resultify(
+      (): Promise<ArrayBuffer | Blob | Uint8Array> => getBinaryBody(),
+    );
+
+    if (!binaryBody.ok) {
+      return errorResult(
+        new TypedFetchError({
+          id: 'response_read_error',
+          cause: binaryBody.error.cause,
+          message: binaryBody.error.message,
+          status: response.value.status,
         }),
       );
     }
 
     logEnd?.success();
-    return Result.ok(responseText.value);
+
+    return Result.ok(binaryBody.value);
   }
+
+  if (responseType === 'text') {
+    const bodyText = await readResponseText(response.value);
+
+    if (!bodyText.ok) return errorResult(bodyText.error);
+
+    logEnd?.success();
+
+    return Result.ok(bodyText.value);
+  }
+
+  const responseText = await readResponseText(response.value);
+
+  if (!responseText.ok) return errorResult(responseText.error);
 
   const parsedResponse = resultify(
     () => JSON.parse(responseText.value) as unknown,
@@ -639,6 +738,25 @@ export async function typedFetch(
           `${urlUsed.protocol}//${urlUsed.host}${urlUsed.pathname}`
         ),
     };
+  }
+
+  async function readResponseText(
+    fetchResponse: TypedFetchFetcherResponse,
+  ): Promise<Result<string, TypedFetchError<unknown>>> {
+    const text = await resultify(() => fetchResponse.getText());
+
+    if (!text.ok) {
+      return Result.err(
+        new TypedFetchError({
+          id: 'response_read_error',
+          cause: text.error.cause,
+          message: text.error.message,
+          status: fetchResponse.status,
+        }),
+      );
+    }
+
+    return Result.ok(text.value);
   }
 
   return Result.ok(validResponse.value);
@@ -737,6 +855,7 @@ export class TypedFetchError<E = unknown> extends Error {
     | 'request_error'
     | 'on_request_error'
     | 'invalid_json'
+    | 'response_read_error'
     | 'response_validation_error'
     | 'timeout'
     | 'invalid_response';
@@ -951,6 +1070,9 @@ const defaultFetcher: TypedFetchFetcher = async (url, options) => {
 
   return {
     getText: () => response.text(),
+    getArrayBuffer: () => response.arrayBuffer(),
+    getBlob: () => response.blob(),
+    getBytes: async () => new Uint8Array(await response.arrayBuffer()),
     status: response.status,
     statusText: response.statusText,
     ok: response.ok,

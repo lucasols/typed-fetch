@@ -10,6 +10,7 @@ A strongly-typed fetch wrapper with inferred schema validation and the Result pa
 - **Result Pattern:** Explicit success (`Ok`) and failure (`Err`) handling, eliminating the need for try/catch blocks for expected errors. Uses [t-result](https://github.com/lucasols/t-result) under the hood.
 - **Detailed Errors:** Custom `TypedFetchError` class provides comprehensive error information (status, ID, validation issues, etc.).
 - **Flexible Payloads:** Supports JSON payloads and multipart/form-data.
+- **Multiple Response Types:** Read responses as JSON, text, `ArrayBuffer`, `Blob`, or `Uint8Array` with fully inferred return types.
 - **Query Parameters:** Easily add simple or JSON-stringified query parameters.
 - **Customizable Logging:** Built-in logging for debugging requests.
 - **Path Validation:** Prevents common path formatting errors.
@@ -72,7 +73,11 @@ Makes an HTTP request with type validation and structured error handling.
 **Overloads:**
 
 1. `typedFetch(path: string | URL, options: ApiCallParams & { jsonResponse: false }): Promise<Result<string, TypedFetchError<string>>>`
-2. `typedFetch<R, E>(path: string | URL, options: ApiCallParams<E> & { jsonResponse?: true; responseSchema?: StandardSchemaV1<R>; errorResponseSchema?: StandardSchemaV1<E>; getMessageFromRequestError?: (errorResponse: E) => string; }): Promise<Result<R, TypedFetchError<E>>>`
+2. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'text' }): Promise<Result<string, TypedFetchError<string>>>`
+3. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'arrayBuffer' }): Promise<Result<ArrayBuffer, TypedFetchError<string>>>`
+4. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'blob' }): Promise<Result<Blob, TypedFetchError<string>>>`
+5. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'bytes' }): Promise<Result<Uint8Array, TypedFetchError<string>>>`
+6. `typedFetch<R, E>(path: string | URL, options: ApiCallParams<E> & { jsonResponse?: true; responseType?: 'json'; responseSchema?: StandardSchemaV1<R>; errorResponseSchema?: StandardSchemaV1<E>; getMessageFromRequestError?: (errorResponse: E) => string; }): Promise<Result<R, TypedFetchError<E>>>`
 
 **Parameters:**
 
@@ -88,7 +93,15 @@ Makes an HTTP request with type validation and structured error handling.
   - `responseSchema` (`StandardSchemaV1<R>`, optional): A Standard Schema to validate the successful response body. If provided, the `Ok` result value will be typed as `R`.
   - `errorResponseSchema` (`StandardSchemaV1<E>`, optional): A Standard Schema to validate the error response body when the request fails (e.g., 4xx, 5xx status). If provided and validation succeeds, the `errResponse` property of `TypedFetchError` will be typed as `E`.
   - `getMessageFromRequestError` (`(errorResponse: E) => string`, optional): A function to extract a user-friendly error message from the parsed error response (`errResponse`). Used when `errorResponseSchema` is provided and validation passes.
-  - `jsonResponse` (`boolean`, optional): Whether to parse response as JSON. Defaults to `true`. When `false`, the response will be returned as a string.
+  - `responseType` (`'json' | 'text' | 'arrayBuffer' | 'blob' | 'bytes'`, optional): How to read and return the response body. Defaults to `'json'`. Determines the type of the `Ok` value:
+    - `'json'` (default): parses the body as JSON and validates it against `responseSchema`. `Ok` value typed as `R`.
+    - `'text'`: returns the raw body as a `string`.
+    - `'arrayBuffer'`: returns the raw body as an `ArrayBuffer`.
+    - `'blob'`: returns the raw body as a `Blob`.
+    - `'bytes'`: returns the raw body as a `Uint8Array`.
+
+    For non-`json` types, error responses (non-2xx) still produce a `request_error` whose `response` is the raw text body, and `responseSchema`/`errorResponseSchema` are not applicable.
+  - `jsonResponse` (`boolean`, optional): Legacy shortcut kept for backwards compatibility. Defaults to `true`. When `false`, behaves like `responseType: 'text'`. Prefer `responseType`. If both are provided, `responseType` takes precedence.
   - `disablePathValidation` (`boolean`, optional): Disable the validation that prevents paths starting/ending with `/`.
   - `timeoutMs` (`number`, optional): Specifies the timeout for the request in milliseconds. If the request takes longer than `timeoutMs`, it will be aborted and result in a `TypedFetchError` with `id: 'timeout'`.
   - `signal` (`AbortSignal`, optional): An `AbortSignal` to allow aborting the request externally. If the request is aborted, it will result in a `TypedFetchError` with `id: 'aborted'`.
@@ -113,7 +126,7 @@ Custom error class returned in the `Err` variant of the `Result`.
 
 **Properties:**
 
-- `id` (`'invalid_options' | 'aborted' | 'network_or_cors_error' | 'request_error' | 'invalid_json' | 'response_validation_error' | 'timeout' | 'invalid_response'`): A unique identifier for the type of error.
+- `id` (`'invalid_options' | 'aborted' | 'network_or_cors_error' | 'request_error' | 'invalid_json' | 'response_read_error' | 'response_validation_error' | 'timeout' | 'invalid_response'`): A unique identifier for the type of error. `response_read_error` is returned when the response body could not be read (e.g. the underlying stream errored, or a custom fetcher cannot provide the requested binary type).
 - `message` (`string`): A description of the error.
 - `status` (`number`): The HTTP status code of the response (0 if the request didn't receive a response, e.g., network error).
 - `errResponse` (`E | undefined`): The parsed error response body, validated against `errorResponseSchema` if provided.
@@ -223,13 +236,38 @@ async function downloadTextFile() {
   const result = await typedFetch('/download/readme.txt', {
     host: 'https://api.example.com',
     method: 'GET',
-    jsonResponse: false, // Return response as string instead of parsing JSON
+    responseType: 'text', // Return response as a string instead of parsing JSON
   });
 
   if (result.ok) {
     console.log('File content:', result.value); // string
   } else {
     console.error('Download failed:', result.error.message);
+  }
+}
+```
+
+### Request with Binary Response
+
+Use `responseType` to read the response body as binary. The `Ok` value is typed
+accordingly (`ArrayBuffer`, `Blob`, or `Uint8Array`).
+
+```typescript
+import { typedFetch } from '@ls-stack/typed-fetch';
+
+async function downloadPdf() {
+  const result = await typedFetch('/reports/monthly.pdf', {
+    host: 'https://api.example.com',
+    method: 'GET',
+    responseType: 'arrayBuffer', // 'arrayBuffer' | 'blob' | 'bytes'
+  });
+
+  if (result.ok) {
+    const buffer = result.value; // ArrayBuffer
+    console.log(`Downloaded ${buffer.byteLength} bytes`);
+  } else {
+    // Non-2xx responses still produce a `request_error` with the raw text body
+    console.error('Download failed:', result.error.id, result.error.message);
   }
 }
 ```
