@@ -1065,7 +1065,7 @@ export function standardResultValidate<I, O = I>(
   return Result.ok(result.value);
 }
 
-const defaultFetcher: TypedFetchFetcher = async (url, options) => {
+export const defaultFetcher: TypedFetchFetcher = async (url, options) => {
   const response = await fetch(url, options);
 
   return {
