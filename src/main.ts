@@ -223,7 +223,24 @@ type GenericApiCallParams<E = unknown> = ApiCallParams<E> & {
   jsonResponse?: boolean;
   responseType?: TypedFetchResponseType;
   responseSchema?: StandardSchemaV1<unknown>;
-  errorResponseSchema?: StandardSchemaV1<E>;
+  errorResponseSchema?: StandardSchemaV1<unknown, E>;
+  getMessageFromRequestError?: (errorResponse: E) => string;
+};
+
+type JsonApiCallParams<R, E> = ApiCallParams<NoInfer<E>> & {
+  jsonResponse?: true;
+  responseType?: 'json';
+  /**
+   * The schema to validate the response against
+   */
+  responseSchema?: StandardSchemaV1<unknown, R>;
+  /**
+   * The schema to validate the error response against
+   */
+  errorResponseSchema?: StandardSchemaV1<unknown, E>;
+  /**
+   * A function to get the message from the error response
+   */
   getMessageFromRequestError?: (errorResponse: E) => string;
 };
 
@@ -249,22 +266,7 @@ export async function typedFetch(
 ): Promise<Result<Uint8Array, TypedFetchError<string>>>;
 export async function typedFetch<R = unknown, E = unknown>(
   pathOrUrl: string | URL,
-  options: ApiCallParams<NoInfer<E>> & {
-    jsonResponse?: true;
-    responseType?: 'json';
-    /**
-     * The schema to validate the response against
-     */
-    responseSchema?: StandardSchemaV1<R>;
-    /**
-     * The schema to validate the error response against
-     */
-    errorResponseSchema?: StandardSchemaV1<E>;
-    /**
-     * A function to get the message from the error response
-     */
-    getMessageFromRequestError?: (errorResponse: E) => string;
-  },
+  options: JsonApiCallParams<R, E>,
 ): Promise<Result<R, TypedFetchError<E>>>;
 export async function typedFetch(
   pathOrUrl: string | URL,

@@ -77,7 +77,7 @@ Makes an HTTP request with type validation and structured error handling.
 3. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'arrayBuffer' }): Promise<Result<ArrayBuffer, TypedFetchError<string>>>`
 4. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'blob' }): Promise<Result<Blob, TypedFetchError<string>>>`
 5. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'bytes' }): Promise<Result<Uint8Array, TypedFetchError<string>>>`
-6. `typedFetch<R, E>(path: string | URL, options: ApiCallParams<E> & { jsonResponse?: true; responseType?: 'json'; responseSchema?: StandardSchemaV1<R>; errorResponseSchema?: StandardSchemaV1<E>; getMessageFromRequestError?: (errorResponse: E) => string; }): Promise<Result<R, TypedFetchError<E>>>`
+6. `typedFetch<R, E>(path: string | URL, options: ApiCallParams<E> & { jsonResponse?: true; responseType?: 'json'; responseSchema?: StandardSchemaV1<unknown, R>; errorResponseSchema?: StandardSchemaV1<unknown, E>; getMessageFromRequestError?: (errorResponse: E) => string; }): Promise<Result<R, TypedFetchError<E>>>`
 
 **Parameters:**
 
@@ -90,8 +90,8 @@ Makes an HTTP request with type validation and structured error handling.
   - `jsonPathParams` (`Record<string, unknown>`, optional): Key-value pairs where values are JSON-stringified before being added as query parameters.
   - `headers` (`Record<string, string>`, optional): Custom request headers.
   - `formData` (`Record<string, string | File | File[] | RequestPayload | undefined> | FormData`, optional): Data for `multipart/form-data` requests. Cannot be used with `payload`. The `Content-Type` header is set automatically by the browser. JSON objects within form data will be stringified.
-  - `responseSchema` (`StandardSchemaV1<R>`, optional): A Standard Schema to validate the successful response body. If provided, the `Ok` result value will be typed as `R`.
-  - `errorResponseSchema` (`StandardSchemaV1<E>`, optional): A Standard Schema to validate the error response body when the request fails (e.g., 4xx, 5xx status). If provided and validation succeeds, the `errResponse` property of `TypedFetchError` will be typed as `E`.
+  - `responseSchema` (`StandardSchemaV1<unknown, R>`, optional): A Standard Schema to validate the successful response body. If provided, the `Ok` result value will be typed as `R`.
+  - `errorResponseSchema` (`StandardSchemaV1<unknown, E>`, optional): A Standard Schema to validate the error response body when the request fails (e.g., 4xx, 5xx status). If provided and validation succeeds, the `errResponse` property of `TypedFetchError` will be typed as `E`.
   - `getMessageFromRequestError` (`(errorResponse: E) => string`, optional): A function to extract a user-friendly error message from the parsed error response (`errResponse`). Used when `errorResponseSchema` is provided and validation passes.
   - `responseType` (`'json' | 'text' | 'arrayBuffer' | 'blob' | 'bytes'`, optional): How to read and return the response body. Defaults to `'json'`. Determines the type of the `Ok` value:
     - `'json'` (default): parses the body as JSON and validates it against `responseSchema`. `Ok` value typed as `R`.

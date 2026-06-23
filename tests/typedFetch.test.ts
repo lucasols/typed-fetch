@@ -6,8 +6,18 @@ import {
 import fetchMock from 'fetch-mock';
 import { afterEach, assert, beforeEach, describe, expect, test } from 'vitest';
 import { z } from 'zod';
-import { typedFetch, type TypedFetchError } from '../src/main';
+import {
+  typedFetch,
+  type StandardSchemaV1,
+  type TypedFetchError,
+} from '../src/main';
 import { getErrorObj, getErrorObjFromResult, getLastCall } from './utils';
+
+function toStandardSchema<Output>(
+  schema: StandardSchemaV1<unknown, Output>,
+): StandardSchemaV1<unknown, Output> {
+  return schema;
+}
 
 beforeEach(() => {
   fetchMock.mockGlobal();
@@ -49,6 +59,26 @@ test('should make a successful GET request and parse the response', async () => 
       "message": "Data fetched",
     }
   `);
+});
+
+test('should infer the response type from converted standard schemas', async () => {
+  fetchMock.get('http://localhost:3000/editor', {
+    content: 'hello',
+  });
+
+  const result = await typedFetch('editor', {
+    method: 'GET',
+    host: 'http://localhost:3000',
+    responseSchema: toStandardSchema(z.object({ content: z.string() })),
+  });
+
+  assert(result.ok);
+
+  typingTest.expectType<
+    TestTypeIsEqual<typeof result.value, { content: string }>
+  >();
+
+  expect(result.value).toEqual({ content: 'hello' });
 });
 
 test('should make a successful POST request with payload and parse the response', async () => {
