@@ -224,7 +224,7 @@ type GenericApiCallParams<E = unknown> = ApiCallParams<E> & {
   responseType?: TypedFetchResponseType;
   responseSchema?: StandardSchemaV1<unknown>;
   errorResponseSchema?: StandardSchemaV1<unknown, E>;
-  getMessageFromRequestError?: (errorResponse: E) => string;
+  getMessageFromRequestError?: (errorResponse: E) => string | null | undefined;
 };
 
 type JsonApiCallParams<R, E> = ApiCallParams<NoInfer<E>> & {
@@ -239,9 +239,11 @@ type JsonApiCallParams<R, E> = ApiCallParams<NoInfer<E>> & {
    */
   errorResponseSchema?: StandardSchemaV1<unknown, E>;
   /**
-   * A function to get the message from the error response
+   * A function to get the `request_error` message from the validated error
+   * response, falls back to the response status text when it returns an empty
+   * value
    */
-  getMessageFromRequestError?: (errorResponse: E) => string;
+  getMessageFromRequestError?: (errorResponse: E) => string | null | undefined;
 };
 
 export async function typedFetch(
@@ -654,6 +656,19 @@ export async function typedFetch(
   );
 
   if (!parsedResponse.ok) {
+    // A non-JSON error body (e.g. a proxy HTML page) is still a request error,
+    // keep the upstream status and return the raw text as the response
+    if (!response.value.ok) {
+      return errorResult(
+        new TypedFetchError({
+          id: 'request_error',
+          message: response.value.statusText,
+          status: response.value.status,
+          response: responseText.value,
+        }),
+      );
+    }
+
     return errorResult(
       new TypedFetchError<unknown>({
         id: 'invalid_json',
@@ -686,9 +701,9 @@ export async function typedFetch(
       new TypedFetchError({
         id: 'request_error',
         message:
-          getMessageFromRequestError && errorResponse?.value ?
-            getMessageFromRequestError(errorResponse.value)
-          : response.value.statusText,
+          (errorResponse?.value !== undefined &&
+            getMessageFromRequestError?.(errorResponse.value)) ||
+          response.value.statusText,
         status: response.value.status,
         response: parsedResponse.value,
         errResponse: errorResponse?.value,

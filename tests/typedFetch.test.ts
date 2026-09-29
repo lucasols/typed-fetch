@@ -444,6 +444,31 @@ describe('error handling', () => {
     `);
   });
 
+  test('should keep the status of a non-JSON error response', async () => {
+    fetchMock.get('http://test.com/bad/gateway', {
+      status: 502,
+      body: '<html>Bad Gateway</html>',
+    });
+
+    const result = await typedFetch('bad/gateway', {
+      method: 'GET',
+      host: 'http://test.com',
+      errorResponseSchema: z.object({ error: z.string() }),
+    });
+
+    assert(!result.ok);
+    expect(getErrorObj(result.error)).toMatchInlineSnapshot(`
+      {
+        "id": "request_error",
+        "message": "Bad Gateway",
+        "method": "GET",
+        "response": "<html>Bad Gateway</html>",
+        "status": 502,
+        "url": "http://test.com/bad/gateway",
+      }
+    `);
+  });
+
   test('should return an error if response validation fails', async () => {
     fetchMock.get('http://test.com/validation/fail', {
       body: { name: 'Test Name', age: 'twenty', id: [1, 2, '3'] },
@@ -567,6 +592,27 @@ describe('error handling', () => {
         "url": "http://test.com/not/found",
       }
     `);
+  });
+
+  test('getMessageFromRequestError falls back to the status text', async () => {
+    fetchMock.get('http://test.com/not/found', {
+      body: { metadata: {} },
+      status: 404,
+    });
+
+    const result = await typedFetch('not/found', {
+      method: 'GET',
+      host: 'http://test.com',
+      errorResponseSchema: z.object({
+        metadata: z.object({ message: z.string().optional() }),
+      }),
+      getMessageFromRequestError: (response) => response.metadata.message,
+    });
+
+    assert(!result.ok);
+
+    expect(result.error.id).toBe('request_error');
+    expect(result.error.message).toBe('Not Found');
   });
 
   test('invalid url', async () => {

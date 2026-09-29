@@ -77,7 +77,7 @@ Makes an HTTP request with type validation and structured error handling.
 3. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'arrayBuffer' }): Promise<Result<ArrayBuffer, TypedFetchError<string>>>`
 4. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'blob' }): Promise<Result<Blob, TypedFetchError<string>>>`
 5. `typedFetch(path: string | URL, options: ApiCallParams & { responseType: 'bytes' }): Promise<Result<Uint8Array, TypedFetchError<string>>>`
-6. `typedFetch<R, E>(path: string | URL, options: ApiCallParams<E> & { jsonResponse?: true; responseType?: 'json'; responseSchema?: StandardSchemaV1<unknown, R>; errorResponseSchema?: StandardSchemaV1<unknown, E>; getMessageFromRequestError?: (errorResponse: E) => string; }): Promise<Result<R, TypedFetchError<E>>>`
+6. `typedFetch<R, E>(path: string | URL, options: ApiCallParams<E> & { jsonResponse?: true; responseType?: 'json'; responseSchema?: StandardSchemaV1<unknown, R>; errorResponseSchema?: StandardSchemaV1<unknown, E>; getMessageFromRequestError?: (errorResponse: E) => string | null | undefined; }): Promise<Result<R, TypedFetchError<E>>>`
 
 **Parameters:**
 
@@ -92,7 +92,7 @@ Makes an HTTP request with type validation and structured error handling.
   - `formData` (`Record<string, string | File | File[] | RequestPayload | undefined> | FormData`, optional): Data for `multipart/form-data` requests. Cannot be used with `payload`. The `Content-Type` header is set automatically by the browser. JSON objects within form data will be stringified.
   - `responseSchema` (`StandardSchemaV1<unknown, R>`, optional): A Standard Schema to validate the successful response body. If provided, the `Ok` result value will be typed as `R`.
   - `errorResponseSchema` (`StandardSchemaV1<unknown, E>`, optional): A Standard Schema to validate the error response body when the request fails (e.g., 4xx, 5xx status). If provided and validation succeeds, the `errResponse` property of `TypedFetchError` will be typed as `E`.
-  - `getMessageFromRequestError` (`(errorResponse: E) => string`, optional): A function to extract a user-friendly error message from the parsed error response (`errResponse`). Used when `errorResponseSchema` is provided and validation passes.
+  - `getMessageFromRequestError` (`(errorResponse: E) => string | null | undefined`, optional): A function to extract a user-friendly error message from the parsed error response (`errResponse`), which becomes the `request_error` `message`. Used when `errorResponseSchema` is provided and validation passes. Falls back to the response status text when it returns an empty value.
   - `responseType` (`'json' | 'text' | 'arrayBuffer' | 'blob' | 'bytes'`, optional): How to read and return the response body. Defaults to `'json'`. Determines the type of the `Ok` value:
     - `'json'` (default): parses the body as JSON and validates it against `responseSchema`. `Ok` value typed as `R`.
     - `'text'`: returns the raw body as a `string`.
@@ -101,6 +101,8 @@ Makes an HTTP request with type validation and structured error handling.
     - `'bytes'`: returns the raw body as a `Uint8Array`.
 
     For non-`json` types, error responses (non-2xx) still produce a `request_error` whose `response` is the raw text body, and `responseSchema`/`errorResponseSchema` are not applicable.
+
+    For `'json'`, an error response (non-2xx) whose body is not valid JSON also produces a `request_error` with the upstream `status` and the raw text body as `response`, instead of an `invalid_json` error.
   - `jsonResponse` (`boolean`, optional): Legacy shortcut kept for backwards compatibility. Defaults to `true`. When `false`, behaves like `responseType: 'text'`. Prefer `responseType`. If both are provided, `responseType` takes precedence.
   - `disablePathValidation` (`boolean`, optional): Disable the validation that prevents paths starting/ending with `/`.
   - `timeoutMs` (`number`, optional): Specifies the timeout for the request in milliseconds. If the request takes longer than `timeoutMs`, it will be aborted and result in a `TypedFetchError` with `id: 'timeout'`.
