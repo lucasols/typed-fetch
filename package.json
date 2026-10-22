@@ -48,7 +48,7 @@
     "zod": "^3.24.4"
   },
   "dependencies": {
-    "@ls-stack/utils": "^3.5.0",
+    "@ls-stack/utils": "^4.0.0",
     "@standard-schema/spec": "^1.0.0",
     "t-result": "^0.6.1"
   }
