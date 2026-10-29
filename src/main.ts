@@ -1,7 +1,6 @@
 import { cachedGetter } from '@ls-stack/utils/cache';
 import { safeJsonStringify } from '@ls-stack/utils/safeJson';
 import { type __LEGIT_ANY__ } from '@ls-stack/utils/saferTyping';
-import { sleep } from '@ls-stack/utils/sleep';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { Result, resultify } from 't-result';
 
@@ -808,6 +807,7 @@ export async function typedFetch(
     );
 
     if (
+      !signal?.aborted &&
       retry?.maxRetries &&
       retry.maxRetries > 0 &&
       canRetryErrorId &&
@@ -823,31 +823,34 @@ export async function typedFetch(
           retry.delayMs(nextRetryAttempt)
         : retry.delayMs;
 
-      await sleep(delay);
+      await sleepUntilAborted(delay, signal);
 
-      const onRetryResult = resultify(() =>
-        retry.onRetry?.({
-          error,
-          retryAttempt: nextRetryAttempt,
-          errorDuration: errorDuration.value,
-        }),
-      );
+      // if aborted during the delay, return the last real error instead of retrying
+      if (!signal?.aborted) {
+        const onRetryResult = resultify(() =>
+          retry.onRetry?.({
+            error,
+            retryAttempt: nextRetryAttempt,
+            errorDuration: errorDuration.value,
+          }),
+        );
 
-      if (!onRetryResult.ok) {
-        console.error(onRetryResult.error);
+        if (!onRetryResult.ok) {
+          console.error(onRetryResult.error);
+        }
+
+        const newOptions: typeof options = {
+          ...options,
+          retry: {
+            ...retry,
+            [originalMaxRetries]: maxAttempts,
+            maxRetries: retry.maxRetries - 1,
+          },
+        };
+
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        return typedFetch(pathOrUrl, newOptions as any);
       }
-
-      const newOptions: typeof options = {
-        ...options,
-        retry: {
-          ...retry,
-          [originalMaxRetries]: maxAttempts,
-          maxRetries: retry.maxRetries - 1,
-        },
-      };
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return typedFetch(pathOrUrl, newOptions as any);
     }
 
     if (onError) {
@@ -998,6 +1001,27 @@ function getMaskedHeaders(
   }
 
   return hasHeaders ? maskedHeaders : undefined;
+}
+
+function sleepUntilAborted(
+  ms: number,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+
+    function finish() {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', finish);
+      resolve();
+    }
+
+    const timeout = setTimeout(finish, ms);
+    signal?.addEventListener('abort', finish, { once: true });
+  });
 }
 
 function getCanRetryErrorId(

@@ -1,6 +1,10 @@
 import fetchMock from 'fetch-mock';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { typedFetch, TypedFetchError } from '../src/main';
+import {
+  typedFetch,
+  TypedFetchError,
+  type TypedFetchFetcher,
+} from '../src/main';
 import { getErrorObjFromResult, getSuccessValueFromResult } from './utils';
 
 const testHost = 'http://test.com';
@@ -434,4 +438,140 @@ test('retry.onRetry receives correct context', async () => {
 
   expect(retryDurations[0]).toBeGreaterThanOrEqual(50);
   expect(retryDurations[1]).toBeGreaterThanOrEqual(20);
+});
+
+test('aborting the signal during the retry delay returns the last real error without retrying', async () => {
+  fetchMock.getOnce(testApiUrl, {
+    throws: new TypeError('fetch failed'),
+  });
+
+  const controller = new AbortController();
+  const abortAfterMs = 50;
+
+  setTimeout(() => controller.abort(), abortAfterMs);
+
+  const startTime = Date.now();
+
+  const result = await typedFetch(testApiUrl, {
+    method: 'GET',
+    signal: controller.signal,
+    retry: { maxRetries: 3, delayMs: 5_000 },
+  });
+
+  const duration = Date.now() - startTime;
+
+  expect(duration).toBeGreaterThanOrEqual(abortAfterMs - 5);
+  expect(duration).toBeLessThan(abortAfterMs + 200);
+
+  expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
+    {
+      "cause": {
+        "message": "fetch failed",
+        "name": "TypeError",
+      },
+      "id": "network_or_cors_error",
+      "message": "fetch failed",
+      "method": "GET",
+      "status": 0,
+      "url": "http://test.com/api",
+    }
+  `);
+
+  expect(fetchMock.callHistory.calls().length).toBe(1);
+});
+
+function serverErrorResponse(
+  status: number,
+  statusText: string,
+): Awaited<ReturnType<TypedFetchFetcher>> {
+  return {
+    getText: () => Promise.resolve(JSON.stringify({ error: statusText })),
+    status,
+    statusText,
+    ok: false,
+    response: { headers: new Headers(), url: testApiUrl, instance: null },
+  };
+}
+
+test('aborting the signal during a later retry delay keeps the retryAttempt of the last real error', async () => {
+  const controller = new AbortController();
+
+  const onRetry = vi.fn();
+  let fetchCalls = 0;
+
+  const result = await typedFetch(testApiUrl, {
+    method: 'GET',
+    signal: controller.signal,
+    fetcher: () => {
+      fetchCalls++;
+
+      if (fetchCalls === 1) {
+        return Promise.reject(new TypeError('fetch failed'));
+      }
+
+      return Promise.resolve(serverErrorResponse(503, 'Service Unavailable'));
+    },
+    retry: {
+      maxRetries: 3,
+      delayMs: (attempt) => {
+        if (attempt === 2) {
+          setTimeout(() => controller.abort(), 20);
+          return 5_000;
+        }
+
+        return 10;
+      },
+      onRetry,
+    },
+  });
+
+  expect(getErrorObjFromResult(result)).toMatchInlineSnapshot(`
+    {
+      "id": "request_error",
+      "message": "Service Unavailable",
+      "method": "GET",
+      "response": {
+        "error": "Service Unavailable",
+      },
+      "retryAttempt": 1,
+      "status": 503,
+      "url": "http://test.com/api",
+    }
+  `);
+
+  expect(onRetry).toHaveBeenCalledTimes(1);
+  expect(fetchCalls).toBe(2);
+});
+
+test('should not retry if the signal is already aborted when a retryable error happens', async () => {
+  const controller = new AbortController();
+
+  const onRetry = vi.fn();
+  const delayMs = vi.fn(() => 5_000);
+  let fetchCalls = 0;
+
+  const startTime = Date.now();
+
+  const result = await typedFetch(testApiUrl, {
+    method: 'GET',
+    signal: controller.signal,
+    fetcher: () => {
+      fetchCalls++;
+      controller.abort();
+
+      return Promise.resolve(serverErrorResponse(500, 'Internal Server Error'));
+    },
+    retry: { maxRetries: 3, delayMs, onRetry },
+  });
+
+  expect(Date.now() - startTime).toBeLessThan(200);
+
+  expect(getErrorObjFromResult(result)).toMatchObject({
+    id: 'request_error',
+    status: 500,
+  });
+
+  expect(delayMs).not.toHaveBeenCalled();
+  expect(onRetry).not.toHaveBeenCalled();
+  expect(fetchCalls).toBe(1);
 });
